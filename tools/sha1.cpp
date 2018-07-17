@@ -4,13 +4,7 @@
 
 #include <cstdio>
 #include <winsock.h>
-#include <stdint-gcc.h>
 #include "sha1.h"
-
-typedef unsigned long long u_64;
-typedef unsigned long u_32;
-
-
 
 void print_hex(unsigned char* n, u_32 len)
 {
@@ -35,7 +29,6 @@ void process_one_chunk(unsigned char*chunk,u_32 *h0, u_32 *h1, u_32 *h2, u_32*h3
     for (; i < 16; ++i)
     {
         w[i] = htonl(*t);
-
         t++;
     }
     for (; i < 80; ++i)
@@ -83,21 +76,20 @@ void process_one_chunk(unsigned char*chunk,u_32 *h0, u_32 *h1, u_32 *h2, u_32*h3
     *h4 = *h4 + e;
 }
 
-int main()
+u_32 h0 = (0x67452301UL);
+u_32 h1 = (0xEFCDAB89UL);
+u_32 h2 = (0x98BADCFEUL);
+u_32 h3 = (0x10325476UL);
+u_32 h4 = (0xC3D2E1F0UL);
+
+void sha_1(u_char *s,u_64 total_len,u_32 *hh)
 {
-    u_32 h0 = (0x67452301UL);
-    u_32 h1 = (0xEFCDAB89UL);
-    u_32 h2 = (0x98BADCFEUL);
-    u_32 h3 = (0x10325476UL);
-    u_32 h4 = (0xC3D2E1F0UL);
-    char s[] = "a9993e364706816aba3e25717850c26c9cd0d89da9993e364706816aba3e25717850c26c9cd0d89da9993e364706816aba3e25717850c26c9cd0d89da9993e364706816aba3e25717850c26c9cd0d89da9993e364706816aba3e25717850c26c9cd0d89da9993e364706816aba3e25717850c26c9cd0d89d";
-    u_64 msg_len = strlen(s);
+    u_64 msg_len = total_len;
     u_64 msg_len_bits = (msg_len * 8);
     u_32 *tm_bit_len = (u_32*)&msg_len_bits;
     u_32 big_ediant_len [2] = {0};
     big_ediant_len[0] = htonl(tm_bit_len[1]);
     big_ediant_len[1] = htonl(tm_bit_len[0]);
-    //print_hex((unsigned char*)&big_ediant_len, 8);
 
     u_64 rest_len = msg_len % 64;
     u_64 chunk_num = msg_len / 64;
@@ -113,22 +105,30 @@ int main()
         memcpy((void*)&last_chunk[120],&big_ediant_len, 8);
         last_idx = 1;
     }
-   // print_hex((unsigned char*)last_chunk,64*(last_idx+1));
+    // print_hex((unsigned char*)last_chunk,64*(last_idx+1));
     u_32 j = 0;
     for (;j < chunk_num; ++j)
     {
-        process_one_chunk((unsigned char*)&s[64*j],&h0,&h1,&h2,&h3,&h4);
+        process_one_chunk(&s[64*j],&h0,&h1,&h2,&h3,&h4);
     }
     for (j = 0 ;j <= last_idx; ++j)
     {
         process_one_chunk(&last_chunk[64*j],&h0,&h1,&h2,&h3,&h4);
     }
-    u_32 hh[5] = {0};
-    hh[0] = htonl( h0);
+
+    hh[0] = htonl(h0);
     hh[1] = htonl(h1);
     hh[2] = htonl(h2);
     hh[3] = htonl(h3);
     hh[4] = htonl(h4);
+}
+
+int main()
+{
+    char s[] = "";// sha1 = da39a3ee5e6b4b0d3255bfef95601890afd80709
+    u_64 msg_len = strlen(s);
+    u_32 hh[5] = {0};
+    sha_1((u_char*)s, msg_len,hh);
     print_hex((unsigned char*)hh, 20);
 
     return 0;

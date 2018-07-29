@@ -57,33 +57,8 @@ typedef struct
     int stack_size;
 } stack_t;
 
-#define  WAIT_ANN              1
-#define  WAIT_ANN_LIST         2
-#define  WAIT_COMMT            3
-#define  WAIT_CREATE_BY        4
-#define  WAIT_CREATE_DATE      5
-#define  WAIT_ENCODING         6
-#define  WAIT_INFO_CONTENT             7
-#define  WAIT_FILES_STR                8
-#define  WAIT_FILES_VALUE              9
-#define  WAIT_FILES_LEN_STR           10
-#define  WAIT_FILES_LEN_VALUE         11
-#define  WAIT_FILES_PATH_STR          12
-#define  WAIT_FILES_PATH_VALUE        13
-
-#define  WAIT_FILES_NAME       10
-#define  WAIT_PIECE_LEN        11
-#define  WAIT_PIECES           12
-#define  WAIT_PUBLISHER        13
-#define  WAIT_PUBLISHER_URL    14
-#define  WAIT_NODES_IP         15
-#define  WAIT_NODES_PORT       16
-
-#define ELE_KEY                    '1'
+#define ELE_KEY                      '1'
 #define ELE_VALUE                    '2'
-#define ELE_LIST               '3'
-#define ELE_INT               '4'
-#define ELE_ANN_COMMT              '4'
-#define ELE_CREATE_BY              '5'
-#define ELE_CREATE_DATE            '6'
-#define ELE_ENCODEING              '7'
+#define ELE_LIST                     '3'
+#define ELE_INT                      '4'
+

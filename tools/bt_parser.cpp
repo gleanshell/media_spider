@@ -10,13 +10,11 @@
 #include <cwchar>
 #include "bt_parser.h"
 
-int wait_status = -1;
 
 int push(stack_t *s, char a)
 {
     if (s->stack_size >= MAX_STACK_SIZE)
     {
-        //printf("err occured push %c\n", a);
         return -1;
     }
     s->stack_array[s->stack_size++] = a;
@@ -27,7 +25,6 @@ int pop(stack_t *s)
 {
     if (s->stack_size <= 0)
     {
-        //printf("err occured pop\n");
         return -1;
     }
     s->stack_size --;
@@ -38,7 +35,6 @@ int peek(stack_t *s)
 {
     if (s->stack_size <= 0)
     {
-        //printf("err occured peek\n");
         return -1;
     }
     return s->stack_array[s->stack_size-1];
@@ -51,7 +47,6 @@ void init_stack(stack_t *s)
 void read_until_char(char *b, u_32 len, u_32 *pos, char a, char buffer[], int *read_len)
 {
     int i = 0;
-    //printf("pos untillllll %u\n", *pos);
     char *tmp = b+*pos;
     while(1)
     {
@@ -68,7 +63,6 @@ void read_until_char(char *b, u_32 len, u_32 *pos, char a, char buffer[], int *r
         tmp ++;
         (*pos) ++;
     }
-    //printf("len buff %s pos %u i= %d\n", buffer, *pos, i);
     *read_len = i;
 }
 
@@ -115,7 +109,6 @@ void process_by_ele_status(char *val, stack_t*e, stack_t*s)
             break;
         case ELE_VALUE:
             //save value
-
             if (len_ < 200)
             {
                 printf("get an val:%s\n", val);
@@ -124,7 +117,6 @@ void process_by_ele_status(char *val, stack_t*e, stack_t*s)
             {
                 print_hex((unsigned char*)val, len_);
             }
-
             save_announce();
             pop(e);
             break;
@@ -132,12 +124,7 @@ void process_by_ele_status(char *val, stack_t*e, stack_t*s)
             printf("get a list:%s\n", val);
             save_announce_list();
             break;
-        case ELE_ANN_COMMT:
-            save_comment();
-            pop(e);
-            break;
     }
-
 }
 
 int process_a_string(char*b,u_32 len,u_32 *pos,stack_t *e,stack_t*s)
@@ -161,18 +148,14 @@ int process_a_string(char*b,u_32 len,u_32 *pos,stack_t *e,stack_t*s)
         return -1;
     }
 
-        memset(tmp_big_buf, 0, str_len + 1);
-        ret = read_n_char(b,len,pos,str_len,tmp_big_buf);
-        if (ret <= 0)
-        {
-            printf("read str failedddd.\n");
-            free(tmp_big_buf);
-            return -1;
-        }
-        //print_hex((unsigned char*)tmp_big_buf, 20);
-
-    //printf("string-> %s\n", tmp_key);
-
+    memset(tmp_big_buf, 0, str_len + 1);
+    ret = read_n_char(b,len,pos,str_len,tmp_big_buf);
+    if (ret <= 0)
+    {
+        printf("read str failedddd.\n");
+        free(tmp_big_buf);
+        return -1;
+    }
     int peek_ret = peek(e);
 
     if(-1 == peek_ret || (ELE_VALUE != peek_ret) && (ELE_LIST != peek_ret))
@@ -183,7 +166,6 @@ int process_a_string(char*b,u_32 len,u_32 *pos,stack_t *e,stack_t*s)
             printf("errrr\n");
             return -1;
         }
-
         if ('d' == peek_ret)
         {
             ret = push(e, ELE_KEY);
@@ -199,19 +181,16 @@ int process_a_string(char*b,u_32 len,u_32 *pos,stack_t *e,stack_t*s)
                 return -1;
             }
         }
-        else if ('i' == peek_ret)
-        {
+        else if ('i' == peek_ret) {
             ret = push(e, ELE_INT);
             if (ret == -1) {
                 printf("push failed.\n");
                 return -1;
             }
         }
-        ;
     }
 
     process_by_ele_status(tmp_big_buf, e, s);
-
     free(tmp_big_buf);
     return 0;
 }
@@ -227,8 +206,6 @@ int process_a_int(char *b,u_32 len, u_32*pos, stack_t*e,stack_t*s)
         printf("read ':' failed.\n");
         return -1;
     }
-    //printf("integer -> %s\n", buf);
-
     if (e->stack_size == 0)
     {
         int peek_ret = peek(s);
@@ -263,9 +240,7 @@ int process_a_int(char *b,u_32 len, u_32*pos, stack_t*e,stack_t*s)
         }
     }
 
-
     process_by_ele_status(buf, e, s);
-
     return 0;
 }
 
@@ -294,9 +269,7 @@ int ben_coding(char*b, u_32 len,u_32 *pos) {
                 printf("push failed.\n");
                 return -1;
             }
-            //buf[0] must be 'd'
-//            ret = process_a_key_value(f);
-            //printf("pos %u\n", *pos);
+
             ret = process_a_string(b,len,pos,e,s);
             if (-1 == ret) {
                 return -1;
@@ -308,8 +281,6 @@ int ben_coding(char*b, u_32 len,u_32 *pos) {
                 return -1;
             }
 
-            //printf("cur ret : %c\n", buf[0]);
-            //printf("cur peek : %c\n", peek_ret);
             switch (peek_ret) {
                 case 'd':
                 case 'l':
@@ -332,10 +303,8 @@ int ben_coding(char*b, u_32 len,u_32 *pos) {
                                 return -1;
                             }
                         }
-                        //printf("pop ele %c peek:%c\n", e_ret, peek(e));
-                        //printf("pop one char %c \n", ret);
+
                     } else if (buf[0] == 'l' || buf[0] == 'd') {
-                        //printf("push one char : %c\n", buf[0]);
                         ret = push(s, buf[0]);
                         if (ret == -1) {
                             return -1;
@@ -354,7 +323,6 @@ int ben_coding(char*b, u_32 len,u_32 *pos) {
                                 return -1;
                             }
                         }
-
                     } else if (buf[0] == 'i') {
                         ret = process_a_int(b,len,pos,e,s);
                         if (ret == -1) {
@@ -365,7 +333,6 @@ int ben_coding(char*b, u_32 len,u_32 *pos) {
                         process_a_string(b,len,pos,e,s);
                     }
                     break;
-
             }
         }
     }
@@ -373,7 +340,6 @@ int ben_coding(char*b, u_32 len,u_32 *pos) {
     for (int j = 0; j < s->stack_size; ++j) {
         printf("%c ", s->stack_array[j]);
     }
-
 }
 long file_size(FILE *fp)
 {
@@ -381,7 +347,6 @@ long file_size(FILE *fp)
         return -1;
     fseek(fp,0L,SEEK_END);
     long size=ftell(fp);
-
     return size;
 }
 int main()
@@ -428,13 +393,6 @@ int main()
     ben_coding(file_buffer, torrent_file_size,&pos);
     fclose(f);
     free(file_buffer);
-    file_buffer = NULL;
 
-//    FILE *f1 = fopen(file_name, "rb");
-//    char type[2] = {0};
-//    read_n_char(f1, 2, type);
-//    print_hex((unsigned char*)type, 2);
-//    printf("%c %c" , type[0], type[1]);
-//    fclose(f1);
     return 0;
 }

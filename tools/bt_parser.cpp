@@ -109,7 +109,7 @@ void process_by_ele_status(char *val, stack_t*e, stack_t*s)
             break;
         case ELE_VALUE:
             //save value
-            if (len_ < 200)
+            if (len_ < 0)
             {
                 printf("get an val:%s\n", val);
             }
@@ -349,7 +349,7 @@ long file_size(FILE *fp)
     long size=ftell(fp);
     return size;
 }
-int main()
+int main8()
 {
     //setlocale(LC_ALL, "chs");
 //    setlocale(LC_ALL, "zh_CN.UTF-8");
@@ -394,5 +394,15 @@ int main()
     fclose(f);
     free(file_buffer);
 
+    return 0;
+}
+
+int main00001()
+{
+//    char *buffer = "d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re";
+    char *buffer = "d2:ip6:W\"b1:rd2:id20:2NisQJ)ͺF|ge1:t2:aa1:y1:re";
+    u_32 len = strlen(buffer);
+    u_32 pos = 0;
+    ben_coding(buffer, len, &pos);
     return 0;
 }

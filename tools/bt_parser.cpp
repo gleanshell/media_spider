@@ -12,13 +12,26 @@
 #include <clocale>
 #include <afxres.h>
 #include <cwchar>
-#include "bencode.h"
+
+#include "bt_parser.h"
+
 
 void print_result(stack_t *s, contex_stack_t *c);
 stack_t g_stack;
 contex_stack_t g_ctx_stack;
 ben_dict_t dict;
 int status = DICT_WAIT_KEY;
+
+char str_desc[BUTT+1][10]={
+        "BEGIN",
+        "STRING",
+        "DICT",
+        "DICT_KEY",
+        "DICT_VAL",
+        "LIST_HEAD",
+        "LIST_ELE",
+        "BUTT"
+};
 
 int print_flag =0;
 
@@ -628,7 +641,7 @@ int main1()
     return 0;
 }
 
-int main()
+int main123()
 {
     //char *buffer = "d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re";
     //char *buffer = "d2:ip6:10.1.11:rd2:id20:11111111111111111111e1:t2:aa1:y1:re";

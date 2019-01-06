@@ -5,6 +5,10 @@
 // Created by xx on 2018/12/30.
 //
 
+#ifndef BT_PARSER_H
+#define BT_PARSER_H
+#endif // BT_PARSER_H
+
 typedef unsigned long long u_64;
 typedef unsigned long u_32;
 
@@ -30,16 +34,7 @@ enum
     BUTT
 };
 
-char str_desc[BUTT+1][10]={
-        "BEGIN",
-        "STRING",
-        "DICT",
-        "DICT_KEY",
-        "DICT_VAL",
-        "LIST_HEAD",
-        "LIST_ELE",
-        "BUTT"
-};
+
 
 enum
 {
@@ -72,3 +67,6 @@ typedef struct
     str_ele_t *stack_array[MAX_STACK_SIZE];
     int stack_size;
 } contex_stack_t;
+
+int ben_coding(char*b, u_32 len,u_32 *pos);
+void print_result(stack_t *s, contex_stack_t *c);

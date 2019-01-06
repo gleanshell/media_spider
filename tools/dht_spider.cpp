@@ -4,10 +4,17 @@
 
 #include <cstdio>
 #include "dht_spider.h"
+#include "bt_parser.h"
+
+extern stack_t g_stack;
+extern contex_stack_t g_ctx_stack;
+extern ben_dict_t dict;
+//extern int ben_coding(char*b, u_32 len,u_32 *pos);
 
 extern void print_hex(unsigned char* n, u_32 len);
 extern void sha_1(u_char *s,u_64 total_len,u_32 *hh);
-int ben_coding(char*b, u_32 len,u_32 *pos);
+extern int ben_coding(char*b, u_32 len,u_32 *pos);
+extern void print_result(stack_t *s, contex_stack_t *c);
 
 int cmp_node_str(unsigned char * str1, unsigned char *str2)
 {
@@ -21,6 +28,7 @@ int cmp_node_str(unsigned char * str1, unsigned char *str2)
             return -1;
         }
     }
+    return 0;
 }
 
 /**  begin <= node_str < end */
@@ -181,6 +189,24 @@ int on_announce_node()
     return OK;
 }
 
+int get_ip_in_ping_rsp(ben_dict_t *dict, u_32 *ip, u_16 *port)
+{
+    str_ele_t *e = dict->e[0].p.dict_val_ref;
+    while (NULL != e)
+    {
+        if (0 == strcmp(e->str, "ip"))
+        {
+            printf("\nget ping rsp ip: %s\n", e->p.dict_val_ref->str);
+            memcpy(ip, e->p.dict_val_ref->str, sizeof(u_32));
+            memcpy(port,e->p.dict_val_ref->str + sizeof(u_32), sizeof(u_16));
+            return 0;
+        }
+        e = e->p.list_next_ref;
+    }
+    printf("\n not find ip value!\n");
+    return -1;
+}
+
 int rcv_msg(SOCKET s)
 {
     struct sockaddr_in in_add;
@@ -196,6 +222,24 @@ int rcv_msg(SOCKET s)
         ben_coding(buffer, len, &pos);
         return OK;
     } else{
+        //char *buffer = "d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re";
+    //char *buffer = "d2:ip6:10.1.11:rd2:id20:11111111111111111111e1:t2:aa1:y1:re";
+        //char b[500] = "d1:eli201e23:A Generic Error Ocurrede1:t2:aa1:y1:ee";
+        char b[500]= "d2:ip6:10.1.11:rd2:id20:11111111111111111111e1:t2:aa1:y1:re";
+        printf("rcv msg:%s\n", b);
+        u_32 len = strlen(b);
+        u_32 pos = 0;
+        ben_coding(b, len, &pos);
+        print_result(&g_stack, &g_ctx_stack);
+        u_32 ip = 0;
+        u_16 port = 0;
+        get_ip_in_ping_rsp(&dict, &ip, &port);
+        printf("\nbefore covert :%u\n-> %x\n", ip, ip);
+        u_32 _ip = ntohl(ip);
+        printf("\nafter covert :%u\n-> %x\n", _ip, _ip);
+
+        return OK;
+
         printf("no rcv msg\n");
         return ERR;
     }
@@ -335,7 +379,7 @@ int init_route_table(node_t*node)
     remote_addr.sin_family = AF_INET;
     remote_addr.sin_port = htons(6881);
     remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
-     int ret = ping_node(node->send_socket,&remote_addr,node->node_id);
+     int ret = 0;//ping_node(node->send_socket,&remote_addr,node->node_id);
      int try_times = 50;
      while (try_times -- > 0)
      {
@@ -345,7 +389,7 @@ int init_route_table(node_t*node)
          {
              break;
          }
-         _sleep(1);
+         Sleep(1);
      }
 
     /**

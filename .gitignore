@@ -1,3 +1,5 @@
 .idea/
 tools/CMakeLists.txt
 tools/cmake-build-debug
+tools/*.o
+tools/*.exe

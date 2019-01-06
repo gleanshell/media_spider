@@ -1,53 +1,14 @@
 //
 // Created by xx on 2018/7/27.
 //
-
-#ifndef SHA1_BT_PARSER_H
-#define SHA1_BT_PARSER_H
-
-#endif //SHA1_BT_PARSER_H
+//
+// Created by xx on 2018/12/30.
+//
 
 typedef unsigned long long u_64;
 typedef unsigned long u_32;
 
-#define MAX_URL_LEN 200
-#define MAX_ANNOUNCE_NUM 200
-#define MAX_COMMENT_LEN 200
-#define MAX_FILE_NUM 200
-#define MAX_FILE_PATH_LEN 200
 
-typedef struct
-{
-    char path_name[MAX_FILE_PATH_LEN];
-    u_32 length;
-    char md5sum[32];
-}single_file_t;
-
-typedef struct
-{
-    u_32 file_num;
-    single_file_t single_file[MAX_FILE_NUM];
-}multi_file_t ;
-typedef struct
-{
-    u_32 piece_len;
-    char *sha1_pieces[20];
-    union {
-        single_file_t s;
-        multi_file_t m;
-    }u;
-}meta_info_t;
-
-typedef struct
-{
-    char announce[MAX_URL_LEN];
-    u_32 announce_list_num;
-    char announce_list [MAX_ANNOUNCE_NUM][MAX_URL_LEN];
-    char create_date[12];
-    char comment[MAX_COMMENT_LEN];
-    char create_by[MAX_COMMENT_LEN];
-    meta_info_t info;
-}torrent_t;
 
 #define MAX_STACK_SIZE 100
 
@@ -57,8 +18,57 @@ typedef struct
     int stack_size;
 } stack_t;
 
-#define ELE_KEY                      '1'
-#define ELE_VALUE                    '2'
-#define ELE_LIST                     '3'
-#define ELE_INT                      '4'
+enum
+{
+    BEGIN = 0,
+    STRING = 1,
+    DICT,
+    DICT_KEY,
+    DICT_VAL,
+    LIST_HEAD,
+    LIST_ELE,
+    BUTT
+};
 
+char str_desc[BUTT+1][10]={
+        "BEGIN",
+        "STRING",
+        "DICT",
+        "DICT_KEY",
+        "DICT_VAL",
+        "LIST_HEAD",
+        "LIST_ELE",
+        "BUTT"
+};
+
+enum
+{
+    DICT_WAIT_KEY = 1,
+    DICT_WAIT_VAL
+};
+
+#define MAX_STR_LEN 100
+
+typedef struct str_ele
+{
+    char str[MAX_STR_LEN];
+    int str_type;
+    struct
+    {
+        struct str_ele *dict_val_ref;
+        struct str_ele *list_next_ref;
+    }p;
+
+} str_ele_t;
+
+typedef struct
+{
+    str_ele_t e[1000];
+    int ele_cnt;
+}ben_dict_t;
+
+typedef struct
+{
+    str_ele_t *stack_array[MAX_STACK_SIZE];
+    int stack_size;
+} contex_stack_t;

@@ -2,14 +2,25 @@
 // Created by xx on 2018/7/27.
 //
 
+//
+// Created by xx on 2018/12/30.
+//
+
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
 #include <clocale>
 #include <afxres.h>
 #include <cwchar>
-#include "bt_parser.h"
+#include "bencode.h"
 
+void print_result(stack_t *s, contex_stack_t *c);
+stack_t g_stack;
+contex_stack_t g_ctx_stack;
+ben_dict_t dict;
+int status = DICT_WAIT_KEY;
+
+int print_flag =0;
 
 int push(stack_t *s, char a)
 {
@@ -44,6 +55,43 @@ void init_stack(stack_t *s)
 {
     memset(s, 0 , sizeof(stack_t));
 }
+/***************************************for ctx******************************************/
+int ctx_push(contex_stack_t *s, str_ele_t** a)
+{
+    if (s->stack_size >= MAX_STACK_SIZE)
+    {
+        return -1;
+    }
+    s->stack_array[s->stack_size++] = *a;
+    return 0;
+}
+
+int ctx_pop(contex_stack_t *s, str_ele_t **ele)
+{
+    if (s->stack_size <= 0)
+    {
+        return -1;
+    }
+    s->stack_size --;
+    *ele = s->stack_array[s->stack_size];
+    return 0;
+}
+
+int ctx_peek(contex_stack_t *s, str_ele_t **ele)
+{
+    if (s->stack_size <= 0)
+    {
+        return -1;
+    }
+    *ele = s->stack_array[s->stack_size-1];
+    return 0;
+}
+
+void init_ctx_stack(contex_stack_t *s)
+{
+    memset(s, 0 , sizeof(contex_stack_t));
+}
+/**************************************************************************************/
 void read_until_char(char *b, u_32 len, u_32 *pos, char a, char buffer[], int *read_len)
 {
     int i = 0;
@@ -76,58 +124,10 @@ int read_n_char(char *b, u_32 len, u_32 *pos, u_32 n, char buf[500])
     *pos += n;
     return n;
 }
-extern void print_hex(unsigned char*buffer,u_32 n);
 
-void save_announce()
-{
 
-}
-void save_announce_list()
-{
 
-}
-void save_comment()
-{
-
-}
-
-void process_by_ele_status(char *val, stack_t*e, stack_t*s)
-{
-    int peek_ret = peek(e);
-    if (-1 == peek_ret)
-    {
-        printf("err occured\n");
-        return;
-    }
-    size_t len_ = strlen(val);
-    switch (peek_ret)
-    {
-        case ELE_KEY:
-            printf("get ann key:%s\n",val);
-            pop(e);
-            push(e,ELE_VALUE);
-            break;
-        case ELE_VALUE:
-            //save value
-            if (len_ < 0)
-            {
-                printf("get an val:%s\n", val);
-            }
-            else
-            {
-                print_hex((unsigned char*)val, len_);
-            }
-            save_announce();
-            pop(e);
-            break;
-        case ELE_LIST:
-            printf("get a list:%s\n", val);
-            save_announce_list();
-            break;
-    }
-}
-
-int process_a_string(char*b,u_32 len,u_32 *pos,stack_t *e,stack_t*s)
+int process_a_string(char*b,u_32 len,u_32 *pos,stack_t*s, int str_type, ben_dict_t *dict, contex_stack_t *c)
 {
     int ret = -1;
     int read_len = -1;
@@ -136,7 +136,7 @@ int process_a_string(char*b,u_32 len,u_32 *pos,stack_t *e,stack_t*s)
     read_until_char(b, len, pos,':',buf,&read_len);
     if (read_len <= 0)
     {
-        printf("read ':' failed.\n");
+        printf("read ':' failed,read len:%d, len:(%u), pos:(%u).\n", read_len, len, *pos);
         return -1;
     }
     //read key
@@ -156,46 +156,98 @@ int process_a_string(char*b,u_32 len,u_32 *pos,stack_t *e,stack_t*s)
         free(tmp_big_buf);
         return -1;
     }
-    int peek_ret = peek(e);
 
-    if(-1 == peek_ret || (ELE_VALUE != peek_ret) && (ELE_LIST != peek_ret))
+    if (str_type == DICT_KEY)
     {
-        peek_ret = peek(s);
-        if (-1 == peek_ret)
+        str_ele_t * tmp_ele_1 = NULL;
+        ctx_peek(c, &tmp_ele_1);
+
+        if (NULL == tmp_ele_1)
         {
-            printf("errrr\n");
+            return -1;
+            printf("can't be here!\n");
+        }
+
+        int n = dict->ele_cnt;
+        dict->e[n].str_type = DICT_KEY;
+        memcpy(dict->e[n].str, tmp_big_buf, str_len+1 );
+        str_ele_t * tmp_ele= &dict->e[n];
+        dict->ele_cnt ++;
+        //list contains dict,the inner dict use val_ref to list dict's inner key-value
+        /*
+        4:info
+        d
+            5:files
+            l
+                d
+                    6:length
+                    i2660662962e
+
+                    4:path
+                    l
+                        46:Pacific.Rim.2013.1080p.WEB-DL.H264.AAC-HQC.mp4
+                    e
+
+        */
+        tmp_ele->p.list_next_ref =tmp_ele_1->p.dict_val_ref;
+        tmp_ele_1->p.dict_val_ref = tmp_ele;
+
+        ctx_push(c,&tmp_ele);
+
+    }
+    else if (str_type == DICT_VAL)
+    {
+
+        int n = dict->ele_cnt;
+        dict->e[n].str_type = DICT_VAL;
+        memcpy(dict->e[n].str, tmp_big_buf, (str_len+1) > MAX_STR_LEN? MAX_STR_LEN: str_len+1);
+
+        str_ele_t * tmp_ele= &dict->e[n];
+        dict->ele_cnt ++;
+
+        str_ele * tmp_ele_1 = NULL;
+        ctx_peek(c, &tmp_ele_1);
+        if (NULL == tmp_ele_1 || tmp_ele_1->str_type != DICT_KEY )
+        {
+            printf("err occur..DICT VAL (%d), str = {%s}\n", tmp_ele_1->str_type, tmp_ele_1->str);
             return -1;
         }
-        if ('d' == peek_ret)
+
+        tmp_ele_1->p.dict_val_ref = (struct str_ele *)tmp_ele;
+        ctx_pop(c,&tmp_ele_1);
+
+        tmp_ele_1 = NULL;
+        ctx_peek(c, &tmp_ele_1);
+
+    }
+    else if (str_type == LIST_ELE)
+    {
+        int n = dict->ele_cnt;
+        dict->e[n].str_type = DICT_VAL;
+        dict->e[n].p.list_next_ref = NULL;
+        memcpy(dict->e[n].str, tmp_big_buf, str_len+1 );
+
+        str_ele_t * tmp_ele= &dict->e[n];
+        dict->ele_cnt ++;
+
+        str_ele * tmp_ele_1 = NULL;
+        ctx_peek(c, &tmp_ele_1);
+        if (NULL == tmp_ele_1 )
         {
-            ret = push(e, ELE_KEY);
-            if (ret == -1) {
-                printf("push failed.\n");
-                return -1;
-            }
-        }else if ('l' == peek_ret)
-        {
-            ret = push(e, ELE_LIST);
-            if (ret == -1) {
-                printf("push failed.\n");
-                return -1;
-            }
+            printf("err occur.list.(%d)--%d\n", NULL == tmp_ele_1, tmp_ele_1->str_type);
+            return -1;
         }
-        else if ('i' == peek_ret) {
-            ret = push(e, ELE_INT);
-            if (ret == -1) {
-                printf("push failed.\n");
-                return -1;
-            }
-        }
+
+        tmp_ele->p.list_next_ref =tmp_ele_1->p.list_next_ref;
+        tmp_ele_1->p.list_next_ref = tmp_ele;
+
     }
 
-    process_by_ele_status(tmp_big_buf, e, s);
     free(tmp_big_buf);
     return 0;
 }
 
-int process_a_int(char *b,u_32 len, u_32*pos, stack_t*e,stack_t*s)
+int process_a_int(char *b,u_32 len, u_32*pos, stack_t*s, ben_dict_t *dict,contex_stack_t *c)
 {
     int read_len = -1;
     int ret = -1;
@@ -206,141 +258,318 @@ int process_a_int(char *b,u_32 len, u_32*pos, stack_t*e,stack_t*s)
         printf("read ':' failed.\n");
         return -1;
     }
-    if (e->stack_size == 0)
-    {
-        int peek_ret = peek(s);
-        if (-1 == peek_ret)
-        {
-            printf("errrr\n");
-            return -1;
-        }
 
-        if ('d' == peek_ret)
-        {
-            ret = push(e, ELE_KEY);
-            if (ret == -1) {
-                printf("push failed.\n");
-                return -1;
-            }
-        }else if ('l' == peek_ret)
-        {
-            ret = push(e, ELE_LIST);
-            if (ret == -1) {
-                printf("push failed.\n");
-                return -1;
-            }
-        }
-        else if ('i' == peek_ret)
-        {
-            ret = push(e, ELE_INT);
-            if (ret == -1) {
-                printf("push failed.\n");
-                return -1;
-            }
-        }
+    int n = dict->ele_cnt;
+    dict->e[n].str_type = DICT_VAL;
+    memcpy(dict->e[n].str, buf, read_len+1 );
+
+    str_ele_t * tmp_ele= &dict->e[n];
+    dict->ele_cnt ++;
+
+    str_ele * tmp_ele_1 = NULL;
+    ctx_peek(c, &tmp_ele_1);
+    if (NULL == tmp_ele_1)
+    {
+        printf("err occur.,INT,%d\n", tmp_ele_1->str_type);
+        return -1;
+    }
+    if (tmp_ele_1->str_type == DICT_KEY)
+    {
+        ctx_pop(c,&tmp_ele_1);
+        tmp_ele_1->p.dict_val_ref = tmp_ele;
+    }
+    else if (tmp_ele_1->str_type == LIST_HEAD)
+    {
+        tmp_ele->p.list_next_ref = tmp_ele_1->p.list_next_ref;
+        tmp_ele_1->p.list_next_ref = tmp_ele;
     }
 
-    process_by_ele_status(buf, e, s);
     return 0;
 }
 
-stack_t g_stack;
-stack_t ele_stack;//for element recognize
+
+
+void init_dict(ben_dict_t *dict)
+{
+    memset(dict, 0, sizeof(ben_dict_t));
+}
+
 int ben_coding(char*b, u_32 len,u_32 *pos) {
     char buf[200] = {0};
     int read_len = 0;
     int ret = -1;
     int peek_ret = -1;
     stack_t *s = &g_stack;
-    stack_t *e = &ele_stack;
+    contex_stack_t *c = &g_ctx_stack;
+    init_ctx_stack(c);
     init_stack(s);
-    init_stack(e);
+    init_dict(&dict);
+
+    int n = -1;
+    ben_dict_t *d = NULL;
+    str_ele_t * tmp_ele = NULL, *tmp_head = NULL;
+    str_ele_t * e = NULL;
+    char tmp_n_buf[10] ={0};
+    int list_head_cnt = 0;
+    int dict_head_cnt = 0;
 
     while ( *pos < len) {
-        peek_ret = peek(s);
-        if (-1 == peek_ret) {
-            ret = read_n_char(b,len,pos,1,buf);
-            if (ret <= 0) {
-                printf("read failed.\n");
-                return -1;
-            }
-            ret = push(s, buf[0]);
-            if (ret == -1) {
-                printf("push failed.\n");
-                return -1;
-            }
+        ret = read_n_char(b,len,pos,1,buf);
 
-            ret = process_a_string(b,len,pos,e,s);
-            if (-1 == ret) {
-                return -1;
-            }
-        } else {
-            ret = read_n_char(b,len,pos,1,buf);
-            if (ret <= 0) {
-                printf("read failed.\n");
-                return -1;
-            }
+        //printf("read a ----- char :(%c), pos (%u)\n", buf[0], *pos);
 
-            switch (peek_ret) {
-                case 'd':
-                case 'l':
-                    if (buf[0] == 'e') {
+        if (ret <= 0)
+        {
+            printf("read failed.\n");
+            return -1;
+        }
 
-                        ret = pop(s);
-                        if (ret == -1) {
-                            return -1;
-                        }
-                        int e_ret = pop(e);
-                        if (e_ret == -1) {
-                            return -1;
-                        }
-                        // follow code because exists this case - - - d key = xxx,value = list, when lists in value pop
-                        // over, ELE_VALUE(pushed to s by key) should be pop too!
-                        if ('d' == peek(s) && peek(e) == ELE_VALUE)
-                        {
-                            e_ret = pop(e);
-                            if (e_ret == -1) {
-                                return -1;
-                            }
-                        }
+        switch (buf[0])
+        {
+            case 'd':
+                //printf("get a DICT!\n");
+                if (buf[0] != 'd' && 1 == *pos)
+                {
+                    printf("err ,firt letter (%c) should be 'd'\n", buf[0]);
+                    return -1;
+                }
+                ret = push(s, buf[0]);
+                if (ret == -1)
+                {
+                    printf("push failed.\n");
+                    return -1;
+                }
+                status = DICT_WAIT_KEY;
 
-                    } else if (buf[0] == 'l' || buf[0] == 'd') {
-                        ret = push(s, buf[0]);
-                        if (ret == -1) {
-                            return -1;
-                        }
-                        if(buf[0] == 'd')
-                        {
-                            ret = push(e, ELE_KEY);
-                            if (ret == -1) {
-                                return -1;
-                            }
-                        }
-                        if(buf[0] == 'l')
-                        {
-                            ret = push(e, ELE_LIST);
-                            if (ret == -1) {
-                                return -1;
-                            }
-                        }
-                    } else if (buf[0] == 'i') {
-                        ret = process_a_int(b,len,pos,e,s);
-                        if (ret == -1) {
-                            return -1;
-                        }
-                    } else {
-                        *pos -= 1;
-                        process_a_string(b,len,pos,e,s);
+                d = &dict;
+                n = d->ele_cnt;
+                d->e[n].str_type = DICT;
+                sprintf(tmp_n_buf, "Dhead_%d", dict_head_cnt ++);
+                memcpy(d->e[n].str, tmp_n_buf, 10 );
+                //printf("add to LIST HEAD n=%d\n", n);
+
+                tmp_ele = &d->e[n];
+                ctx_push(c,&tmp_ele);
+                d->ele_cnt ++;
+
+                break;
+            case 'l':
+                //printf("get a LIST\n");
+                ret = push(s, buf[0]);
+                if (ret == -1)
+                {
+                    printf("push failed.\n");
+                    return -1;
+                }
+                d = &dict;
+                n = d->ele_cnt;
+                d->e[n].str_type = LIST_HEAD;
+                sprintf(tmp_n_buf, "head_%d", list_head_cnt ++);
+                memcpy(d->e[n].str, tmp_n_buf, 10 );
+                //printf("add to LIST HEAD n=%d\n", n);
+
+                tmp_ele = &d->e[n];
+                ctx_push(c,&tmp_ele);
+                d->ele_cnt ++;
+                break;
+
+            case 'i':
+                //printf("get a INT\n");
+                if (peek(s) == 'd')
+                {
+                    if (status == DICT_WAIT_KEY)
+                    {
+                        //str_type = DICT_KEY;
+                        status = DICT_WAIT_VAL;
+                    }else if (status == DICT_WAIT_VAL)
+                    {
+                        //str_type = DICT_VAL;
+                        status = DICT_WAIT_KEY;
                     }
-                    break;
-            }
+
+                }
+                process_a_int(b, len, pos, s,&dict, c);
+
+                break;
+
+            case 'e':
+                //printf("end of a (%c)\n", peek(s));
+                ret = pop(s);
+                if (ret == -1)
+                {
+                    printf("pop failed.\n");
+                    return -1;
+                }
+                e = NULL;
+                tmp_ele = NULL;
+                ret = ctx_pop(c, &e);
+                if (ret == -1)
+                {
+                    printf("pop ctx failed.\n");
+                    return -1;
+                }
+                //printf("pop ctx: %s -> %s\n", str_desc[e->str_type], e->str);
+                ret = ctx_peek(c, &tmp_ele);
+                if (ret == -1)
+                {
+                    printf("peek ctx failed. stack size (%d) (%d)\n", c->stack_size, s->stack_size);
+                    return -1;
+                }
+
+                if (tmp_ele->str_type == LIST_HEAD)
+                {
+                    tmp_head = tmp_ele->p.list_next_ref;
+                    e->p.list_next_ref = tmp_head;
+                    tmp_ele->p.list_next_ref = e;
+                } else if(tmp_ele->str_type == DICT_KEY)
+                {
+                    tmp_ele->p.dict_val_ref = e;
+                    //if (status == DICT_WAIT_VAL)
+                    if (peek(s) == 'd')
+                    {
+                        status = DICT_WAIT_KEY;
+                    }
+                    e = NULL;
+                    ctx_pop(c, &e);
+                }else if(tmp_ele->str_type == DICT)
+                {
+
+                }
+
+                break;
+            default:
+                if (buf[0] > '0' && buf[0] <= '9')
+                {
+                    *pos -= 1;
+                    int str_type = STRING;
+                    if (peek(s) == 'd')
+                    {
+                        if (status == DICT_WAIT_KEY)
+                        {
+                            str_type = DICT_KEY;
+                            status = DICT_WAIT_VAL;
+                        }else if (status == DICT_WAIT_VAL)
+                        {
+                            str_type = DICT_VAL;
+                            status = DICT_WAIT_KEY;
+                        }
+
+                    }else if (peek(s) == 'l')
+                    {
+                        str_type = LIST_ELE;
+                    }
+                    else
+                    {
+                        printf("WRONG ! peek(s) = %c\n", peek(s));
+                    }
+                    process_a_string(b, len, pos, s, str_type, &dict, c);
+                }
+                else
+                {
+                    printf("read a ERR char :(%c)\n", buf[0]);
+                    return -1;
+                }
+                break;
         }
     }
+
+}
+
+void print_result(stack_t *s, contex_stack_t *c)
+{
     printf("stack size:%d\n", s->stack_size);
     for (int j = 0; j < s->stack_size; ++j) {
         printf("%c ", s->stack_array[j]);
     }
+
+    printf("--------------------------\n");
+    printf("dict size:%d\n", dict.ele_cnt);
+    int list_cnt = 0;
+    str_ele_t *temp = &dict.e[0];
+    while (NULL != temp && temp != temp->p.list_next_ref && (temp->str_type >= DICT && temp->str_type <BUTT))
+    {
+        printf("key: %s\n", temp->str);
+        str_ele_t *val = temp->p.dict_val_ref;
+        if (NULL != val && (val->str_type >= DICT && val->str_type <BUTT))
+        {
+            if ( val->str_type == DICT_VAL)
+            {
+                printf("val: %s\n", val->str);
+            }
+            val = val->p.list_next_ref;
+        }
+        temp = temp->p.list_next_ref;
+    }
+
+
+    printf("---------------------------------------\nctx stack size: (%d)\n", c->stack_size);
+    for (int p = 0; p < c->stack_size ; ++p)
+    {
+        //printf("type:[%s],str = (%s)\n",str_desc[c->stack_array[p]->str_type], c->stack_array[p]->str);
+    }
+
+    str_ele_t *t = NULL;
+    for (int k = 0; k < dict.ele_cnt; ++k)
+    {
+        switch (dict.e[k].str_type)
+        {
+        case DICT_KEY:
+        //case DICT:
+            printf("key: %s-> %s ***** ",str_desc[dict.e[k].str_type], dict.e[k].str);
+            if (dict.e[k].p.dict_val_ref != NULL)
+            {
+                printf("val is: %s\n", dict.e[k].p.dict_val_ref->str);
+
+                str_ele_t *t = dict.e[k].p.dict_val_ref->p.list_next_ref;
+                while(t != NULL)
+                {
+                    //printf("list ele:%s\n", t->str);
+                    t = t->p.list_next_ref;
+                }
+            }
+
+            else
+                printf("\n");
+
+            if (dict.e[k].p.list_next_ref != NULL)
+                printf("next is: %s\n", dict.e[k].p.list_next_ref->str);
+            else
+                printf("\n");
+            break;
+        case DICT_VAL:
+            printf("val: %s\n", dict.e[k].str);
+            break;
+        case LIST_HEAD:
+            printf("LIST: %s\n", dict.e[k].str);
+            t = dict.e[k].p.list_next_ref;
+            while(t != NULL)
+            {
+                //if(t->str_type != LIST_HEAD)
+                printf("list ele:%s\n", t->str);
+                t = t->p.list_next_ref;
+            }
+            break;
+        case DICT:
+            printf("DICT: %s\n", dict.e[k].str);
+            t = dict.e[k].p.dict_val_ref;
+            while(t != NULL)
+            {
+                //if(t->str_type != LIST_HEAD)
+                printf("list ele:%s\n", t->str);
+                t = t->p.list_next_ref;
+            }
+            break;
+        default:
+            printf("default: %s\n", dict.e[k].str);
+            break;
+        }
+
+    }
+
+    printf("---------------------------------------\n");
+
 }
+
 long file_size(FILE *fp)
 {
     if(!fp)
@@ -349,13 +578,14 @@ long file_size(FILE *fp)
     long size=ftell(fp);
     return size;
 }
-int main8()
+int main1()
 {
     //setlocale(LC_ALL, "chs");
 //    setlocale(LC_ALL, "zh_CN.UTF-8");
-   // char *file_name = "D:\\Download\\ubuntu-14.04.5-desktop-amd64.iso.torrent";
-    char *file_name = "D:\\Download\\.4354421E5D9274510A9903445A7A2D42C10C8B34.torrent";
-//    char *file_name = "D:\\Download\\女黑手党.Women.of.Mafia.2018.1080p.BluRay.x264-中英双字-RARBT.torrent";
+    // char *file_name = "D:\\Download\\ubuntu-14.04.5-desktop-amd64.iso.torrent";
+    //char *file_name = "E:\\media_spider\\media_spider\\tools\\bencoding\\htpy.torrent";
+    char *file_name = "htpy.torrent";
+//    char *file_name = "D:\\Download\\Ů���ֵ�.Women.of.Mafia.2018.1080p.BluRay.x264-��Ӣ˫��-RARBT.torrent";
     FILE *f = fopen(file_name, "rb");
     long torrent_file_size = file_size(f);
     if (torrent_file_size == -1)
@@ -391,18 +621,22 @@ int main8()
     printf("torrent size: %ld,read size: %d\n", torrent_file_size, r);
     u_32 pos = 0;
     ben_coding(file_buffer, torrent_file_size,&pos);
+    print_result(&g_stack, &g_ctx_stack);
     fclose(f);
     free(file_buffer);
 
     return 0;
 }
 
-int main00001()
+int main()
 {
-//    char *buffer = "d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re";
-    char *buffer = "d2:ip6:W\"b1:rd2:id20:2NisQJ)ͺF|ge1:t2:aa1:y1:re";
+    //char *buffer = "d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re";
+    //char *buffer = "d2:ip6:10.1.11:rd2:id20:11111111111111111111e1:t2:aa1:y1:re";
+    //char *buffer = "d1:eli201e23:A Generic Error Ocurrede1:t2:aa1:y1:ee";
+    char *buffer = "d1:ad2:id20:abcdefghij01234567896:target20:abcdefghij0123456789e1:q9:find_node1:t2:aa1:y1:qe";
     u_32 len = strlen(buffer);
     u_32 pos = 0;
     ben_coding(buffer, len, &pos);
+    print_result(&g_stack, &g_ctx_stack);
     return 0;
 }

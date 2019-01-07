@@ -11,7 +11,7 @@
 #include <cstdlib>
 #include <clocale>
 #include <afxres.h>
-#include <cwchar>
+//#include <cwchar>
 
 #include "bt_parser.h"
 
@@ -251,8 +251,8 @@ int process_a_string(char*b,u_32 len,u_32 *pos,stack_t*s, int str_type, ben_dict
             return -1;
         }
 
-        tmp_ele->p.list_next_ref =tmp_ele_1->p.list_next_ref;
-        tmp_ele_1->p.list_next_ref = tmp_ele;
+        tmp_ele->p.list_next_ref =tmp_ele_1->p.dict_val_ref;
+        tmp_ele_1->p.dict_val_ref = tmp_ele;
 
     }
 
@@ -293,8 +293,8 @@ int process_a_int(char *b,u_32 len, u_32*pos, stack_t*s, ben_dict_t *dict,contex
     }
     else if (tmp_ele_1->str_type == LIST_HEAD)
     {
-        tmp_ele->p.list_next_ref = tmp_ele_1->p.list_next_ref;
-        tmp_ele_1->p.list_next_ref = tmp_ele;
+        tmp_ele->p.list_next_ref = tmp_ele_1->p.dict_val_ref;
+        tmp_ele_1->p.dict_val_ref = tmp_ele;
     }
 
     return 0;
@@ -431,9 +431,9 @@ int ben_coding(char*b, u_32 len,u_32 *pos) {
 
                 if (tmp_ele->str_type == LIST_HEAD)
                 {
-                    tmp_head = tmp_ele->p.list_next_ref;
+                    tmp_head = tmp_ele->p.dict_val_ref;
                     e->p.list_next_ref = tmp_head;
-                    tmp_ele->p.list_next_ref = e;
+                    tmp_ele->p.dict_val_ref = e;
                 } else if(tmp_ele->str_type == DICT_KEY)
                 {
                     tmp_ele->p.dict_val_ref = e;
@@ -554,7 +554,12 @@ void print_result(stack_t *s, contex_stack_t *c)
             break;
         case LIST_HEAD:
             printf("LIST: %s\n", dict.e[k].str);
-            t = dict.e[k].p.list_next_ref;
+            if (dict.e[k].p.list_next_ref != NULL)
+                printf("list next is: %s\n", dict.e[k].p.list_next_ref->str);
+            else
+                printf("\n");
+
+            t = dict.e[k].p.dict_val_ref;
             while(t != NULL)
             {
                 //if(t->str_type != LIST_HEAD)
@@ -564,6 +569,11 @@ void print_result(stack_t *s, contex_stack_t *c)
             break;
         case DICT:
             printf("DICT: %s\n", dict.e[k].str);
+            if (dict.e[k].p.list_next_ref != NULL)
+                printf("dict next is: %s\n", dict.e[k].p.list_next_ref->str);
+            else
+                printf("\n");
+
             t = dict.e[k].p.dict_val_ref;
             while(t != NULL)
             {
@@ -591,14 +601,14 @@ long file_size(FILE *fp)
     long size=ftell(fp);
     return size;
 }
-int main1()
+int main()
 {
     //setlocale(LC_ALL, "chs");
 //    setlocale(LC_ALL, "zh_CN.UTF-8");
     // char *file_name = "D:\\Download\\ubuntu-14.04.5-desktop-amd64.iso.torrent";
-    //char *file_name = "E:\\media_spider\\media_spider\\tools\\bencoding\\htpy.torrent";
-    char *file_name = "htpy.torrent";
-//    char *file_name = "D:\\Download\\Ů���ֵ�.Women.of.Mafia.2018.1080p.BluRay.x264-��Ӣ˫��-RARBT.torrent";
+    char *file_name = "E:\\media_spider\\media_spider\\tools\\bencoding\\htpy.torrent";
+    //char *file_name = "htpy.torrent";
+    //char *file_name = "D:\\Download\\Ů���ֵ�.Women.of.Mafia.2018.1080p.BluRay.x264-��Ӣ˫��-RARBT.torrent";
     FILE *f = fopen(file_name, "rb");
     long torrent_file_size = file_size(f);
     if (torrent_file_size == -1)
@@ -641,7 +651,7 @@ int main1()
     return 0;
 }
 
-int main123()
+int main1()
 {
     //char *buffer = "d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re";
     //char *buffer = "d2:ip6:10.1.11:rd2:id20:11111111111111111111e1:t2:aa1:y1:re";

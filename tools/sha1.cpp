@@ -123,7 +123,7 @@ void sha_1(u_char *s,u_64 total_len,u_32 *hh)
     hh[4] = htonl(h4);
 }
 
-int main1()
+int main1s()
 {
     char s[] = "";// sha1 = da39a3ee5e6b4b0d3255bfef95601890afd80709
     u_64 msg_len = strlen(s);

@@ -207,6 +207,46 @@ int get_ip_in_ping_rsp(ben_dict_t *dict, u_32 *ip, u_16 *port)
     return -1;
 }
 
+int get_id_in_ping_rsp(ben_dict_t *dict, u_8 *id)
+{
+    printf("\nwtf\n");
+    str_ele_t *e = dict->e[0].p.dict_val_ref;
+    while (NULL != e)
+    {
+        if (0 == strcmp(e->str, "r"))
+        {
+            printf("\nget ping rsp r: %s\n", e->p.dict_val_ref->str);
+            str_ele_t *e1 = e->p.dict_val_ref->p.dict_val_ref;
+            while (NULL != e1)
+            {
+                if (0 == strcmp(e1->str, "id"))
+                {
+                    printf("\nget ping rsp id of r: %s\n", e1->p.dict_val_ref->str);
+                    memcpy(id, e1->p.dict_val_ref->str, 20*sizeof(u_8));
+                    return 0;
+                }
+            }
+
+        }
+        e = e->p.list_next_ref;
+    }
+    printf("\n not find id value!\n");
+    return -1;
+}
+
+void inet_bin_to_string(u_32 ip, char output[])
+{
+    unsigned char *tmp = (unsigned char*)&ip;
+    char buf[4] = {0};
+    for (int i = 0; i < 4; ++i)
+    {
+        memset(buf, 0, 4);
+        sprintf(buf, "%hhu", tmp[i]);
+        strcat(output, buf);
+        if (i != 3)
+            strcat(output, ".");
+    }
+}
 int rcv_msg(SOCKET s)
 {
     struct sockaddr_in in_add;
@@ -219,13 +259,32 @@ int rcv_msg(SOCKET s)
         printf("rcv msg:%s\n", buffer);
         u_32 len = strlen(buffer);
         u_32 pos = 0;
-        ben_coding(buffer, len, &pos);
+        ben_coding(buffer, ret, &pos);
+
+        print_result(&g_stack, &g_ctx_stack);
+        u_32 ip = 0;
+        u_16 port = 0;
+        get_ip_in_ping_rsp(&dict, &ip, &port);
+
+        u_8 id[21] ={0};
+        get_id_in_ping_rsp(&dict, id);
+
+        printf("\nbefore covert ip:%u-> %x\n port: %hu -> %x\n", ip, ip, port, port);
+        u_32 _ip = ntohl(ip);
+        u_16 _port = ntohs(port);
+        printf("\nafter covert ip:%u-> %x\nport: %hu -> %x\n", _ip, _ip, _port, _port);
+
+        char dst[16] = {0};
+        inet_bin_to_string(_ip,dst);
+        printf("\n the ip presentation is %s\n", dst);
+
         return OK;
+
     } else{
         //char *buffer = "d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re";
     //char *buffer = "d2:ip6:10.1.11:rd2:id20:11111111111111111111e1:t2:aa1:y1:re";
         //char b[500] = "d1:eli201e23:A Generic Error Ocurrede1:t2:aa1:y1:ee";
-        char b[500]= "d2:ip6:10.1.11:rd2:id20:11111111111111111111e1:t2:aa1:y1:re";
+        /*char b[500]= "d2:ip6:10.1.11:rd2:id20:11111111111111111111e1:t2:aa1:y1:re";
         printf("rcv msg:%s\n", b);
         u_32 len = strlen(b);
         u_32 pos = 0;
@@ -234,11 +293,20 @@ int rcv_msg(SOCKET s)
         u_32 ip = 0;
         u_16 port = 0;
         get_ip_in_ping_rsp(&dict, &ip, &port);
-        printf("\nbefore covert :%u\n-> %x\n", ip, ip);
-        u_32 _ip = ntohl(ip);
-        printf("\nafter covert :%u\n-> %x\n", _ip, _ip);
 
-        return OK;
+        u_8 id[21] ={0};
+        get_id_in_ping_rsp(&dict, id);
+
+        printf("\nbefore covert ip:%u-> %x\n port: %hu -> %x\n", ip, ip, port, port);
+        u_32 _ip = ntohl(ip);
+        u_16 _port = ntohs(port);
+        printf("\nafter covert ip:%u-> %x\nport: %hu -> %x\n", _ip, _ip, _port, _port);
+
+        char dst[16] = {0};
+        inet_bin_to_string(_ip,dst);
+        printf("\n the ip presentation is %s\n", dst);
+
+        return OK;*/
 
         printf("no rcv msg\n");
         return ERR;
@@ -378,9 +446,11 @@ int init_route_table(node_t*node)
     sockaddr_in remote_addr;
     remote_addr.sin_family = AF_INET;
     remote_addr.sin_port = htons(6881);
+    //remote_addr.sin_port = htons(49246);
     remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
-     int ret = 0;//ping_node(node->send_socket,&remote_addr,node->node_id);
-     int try_times = 50;
+    //remote_addr.sin_addr.S_un.S_addr = (inet_addr("183.233.87.223"));
+     int ret = ping_node(node->send_socket,&remote_addr,node->node_id);
+     int try_times = 100;
      while (try_times -- > 0)
      {
          printf("rcv msg times %d:\n", 50 - try_times);
@@ -389,7 +459,7 @@ int init_route_table(node_t*node)
          {
              break;
          }
-         Sleep(1);
+         Sleep(10);
      }
 
     /**

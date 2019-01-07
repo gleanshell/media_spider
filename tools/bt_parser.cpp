@@ -601,7 +601,7 @@ long file_size(FILE *fp)
     long size=ftell(fp);
     return size;
 }
-int main()
+int main22()
 {
     //setlocale(LC_ALL, "chs");
 //    setlocale(LC_ALL, "zh_CN.UTF-8");

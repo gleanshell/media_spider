@@ -22,6 +22,9 @@ typedef unsigned short int u_16;
 typedef unsigned char u_8;
 
 #define NODE_STR_LEN                 (20)
+#define NODE_STR_IP_LEN                 (4)
+#define NODE_STR_PORT_LEN                 (2)
+
 #define BUCKET_SIZE                  (8)
 #define BUCKET_NUM                   (128)
 
@@ -43,12 +46,32 @@ typedef struct bucket
     int status;
     int nodes_num;
 }bucket_t;
+
+
+typedef struct peer_info
+{
+    u_8 node_str[NODE_STR_LEN];
+    u_8 node_ip[NODE_STR_IP_LEN];
+    u_8 node_port[NODE_STR_PORT_LEN];
+    unsigned __int64 update_time;
+    int status;
+}peer_info_t;
+
+typedef struct bucket_tree_node
+{
+    peer_info_t peer_nodes[BUCKET_SIZE];
+    u_8 range_start_str[NODE_STR_LEN];
+    u_8 range_end_str[NODE_STR_LEN];
+    struct bucket_tree_node *l;
+    struct bucket_tree_node *r;
+}bucket_tree_node_t;
+
 typedef struct node
 {
     unsigned char node_id[NODE_STR_LEN];
     SOCKET recv_socket;
     SOCKET send_socket;
-    bucket_t buckets[BUCKET_NUM];
+    bucket_tree_node_t *bkt_tree;
     int buckets_num;
 }node_t;
 

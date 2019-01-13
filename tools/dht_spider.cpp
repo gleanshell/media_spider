@@ -440,8 +440,92 @@ int init_self_node(node_t *node)
     return 0;
 }
 
+int find_prop_node(bucket_tree_node_t*bkt_tree, bucket_tree_node_t *ret, u_8 *node_str)
+{
+    bucket_tree_node_t *tmp = bkt_tree;
+    while(NULL != tmp)
+    {
+
+    }
+}
+
+int insert_into_bucket_tree(bucket_tree_node_t *bkt_tree,u_8 *node_str, u_8 *node_ip, u_8 *node_port )
+{
+    bkt_tree = (bucket_tree_node_t*)malloc(sizeof(bucket_tree_node_t));
+    if (NULL == bkt_tree)
+    {
+        printf("malloc err\n");
+        return -1;
+    }
+}
+
+int read_route_tbl_frm_config(node_t *node)
+{
+    FILE fp = NULL;
+    fp = fopen("dht_route.dat", rb+");
+    if (NULL == fp)
+    {
+        printf("open file failed\n);
+        return -1;
+    }
+    fseek(fp, 0, SEEK_END);
+    long file_size = ftell(fp);
+    if (0 == file_size)
+    {
+        printf("file is empty!\n");
+        return 0;
+    }
+    //read self node id
+    //unsigned char self_node_id[NODE_STR_LEN] = {0};
+    fseek(fp, 0, SEEK_SET);
+    size_t read_len = fread(node->node_id, NODE_STR_LEN, 1, fp);
+    if (read_len <= NODE_STR_LEN)
+    {
+        printf("read self node id err(%d)\n", read_len);
+        return -1;
+    }
+
+    //read route num
+    u_32 route_num = 0;
+    read_len = fread(*route_num, sizeof(u_32), 1, fp);
+    if (read_len <= sizeof(u_32))
+    {
+        printf("read route num err(%u)\n", read_len);
+        return -1;
+    }
+
+    printf("read route num : %u\n", route_num);
+
+    //read route tbl
+    unsigned char * tmp_node_str = NULL;
+    int str_len = (NODE_STR_LEN + NODE_STR_IP_LEN + NODE_STR_PORT_LEN);
+    size_t buf_size = str_len * sizeof(unsigned char) * route_num;
+    tmp_node_str = (unsigned char*)malloc(buf_size);
+    if (NULL == tmp_node_str)
+    {
+        printf("malloc mem (size: %u) err\n", buf_size);
+        return -1;
+    }
+
+    read_len = 0;
+    read_len = fread(tmp_node_str, str_len * sizeof(unsigned char), route_num, fp);
+    if (read_len != route_num)
+    {
+        printf("read err\n,real node cnt : %d\n", read_len);
+        return -1;
+    }
+
+    //update to route tbl in mem;
+    //insert to bucket tree
+
+
+
+    return 0;
+}
+
 int init_route_table(node_t*node)
 {
+
     //ping bootstrap node
     sockaddr_in remote_addr;
     remote_addr.sin_family = AF_INET;

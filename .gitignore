@@ -4,3 +4,7 @@ tools/cmake-build-debug
 tools/*.o
 tools/*.exe
 tools/*/*.torrent
+*.cbp
+bin/*
+obj/*
+*.depend

@@ -16,11 +16,14 @@ extern void sha_1(u_char *s,u_64 total_len,u_32 *hh);
 extern int ben_coding(char*b, u_32 len,u_32 *pos);
 extern void print_result(stack_t *s, contex_stack_t *c);
 
+/**
+* cmp str len is NODE_STR_LEN+1
+*/
 int cmp_node_str(unsigned char * str1, unsigned char *str2)
 {
-    for (int i = NODE_STR_LEN -1; i >= 0; --i)
+    for (int i = 0; i <= NODE_STR_LEN; ++i)
     {
-        if (str1[i] >= str2[i])
+        if (str1[i] > str2[i])
         {
             return 1;
         } else if(str1[i] < str2[i])
@@ -440,23 +443,198 @@ int init_self_node(node_t *node)
     return 0;
 }
 
-int find_prop_node(bucket_tree_node_t*bkt_tree, bucket_tree_node_t *ret, u_8 *node_str)
+void convert_node_str(u_8 *src, u_8 * dst)
+{
+    memcpy(dst+1, src, NODE_STR_LEN);
+}
+
+bool is_node_leaf(bucket_tree_node_t*bkt_tree)
+{
+    return (NULL == bkt_tree->l && NULL == bkt_tree->r);
+}
+
+/**
+* here node_str is NODE_STR_LEN +1
+*/
+int find_prop_node(bucket_tree_node_t *bkt_tree, bucket_tree_node_t **ret, u_8 *node_str)
 {
     bucket_tree_node_t *tmp = bkt_tree;
     while(NULL != tmp)
     {
-
+        if(is_node_leaf(tmp))
+        {
+            *ret = tmp;
+            return 0;
+        }
+        if (1 == cmp_node_str(tmp->range_end_str, node_str))
+        {
+            tmp = tmp->l;
+        }
+        else //if (-1 == cmp_node_str(tmp->range_end_str, node_str))
+        {
+            tmp = tmp->r;
+        }
     }
+    return -1;
+}
+/**
+* bits range from 0,160
+*/
+void generate_str_by_bit(int bits, char *out_str)
+{
+    u_8 tmp_char[NODE_STR_LEN + 1] ={0};
+    int idx = bits / sizeof(u_8);
+    int rest = bits % sizeof(u_8);
+    tmp_char[NODE_STR_LEN - idx] |= (u_8)(1U << (rest) );
+    memcpy(out_str, tmp_char, NODE_STR_LEN);
 }
 
-int insert_into_bucket_tree(bucket_tree_node_t *bkt_tree,u_8 *node_str, u_8 *node_ip, u_8 *node_port )
+/**
+* here node_str is NODE_STR_LEN +1
+*/
+int insert_into_bkt(bucket_tree_node_t *bkt_tree, u_8 *node_str, u_8 *node_ip, u_8 *node_port)
 {
-    bkt_tree = (bucket_tree_node_t*)malloc(sizeof(bucket_tree_node_t));
-    if (NULL == bkt_tree)
+    for (int i = 0; i < BUCKET_SIZE; ++ i)
     {
-        printf("malloc err\n");
+        if (bkt_tree->peer_nodes[i].status == NOT_USE)
+        {
+            bkt_tree->peer_nodes[i].status = IN_USE;
+            memcpy(bkt_tree->peer_nodes[i].node_str, node_str +1 , NODE_STR_LEN);
+            memcpy(bkt_tree->peer_nodes[i].node_ip, node_ip, NODE_STR_IP_LEN);
+            memcpy(bkt_tree->peer_nodes[i].node_port, node_port, NODE_STR_PORT_LEN);
+            time_t t ;
+            time(&t);
+            bkt_tree->peer_nodes[i].update_time = t;
+            return 0;
+        }
+    }
+    // bkt should split into two bucket
+    bkt_tree->l = (bucket_tree_node_t*)malloc(sizeof(bucket_tree_node_t));
+    bkt_tree->r = (bucket_tree_node_t*)malloc(sizeof(bucket_tree_node_t));
+    if (NULL == bkt_tree || NULL == bkt_tree)
+    {
+        free(bkt_tree->l);
+        free(bkt_tree->r);
+        bkt_tree->l = NULL;
+        bkt_tree->r = NULL;
         return -1;
     }
+    //old bkt start = end
+    u_8 tmp_middle_str[NODE_STR_LEN +1] ={0};
+    generate_str_by_bit(bkt_tree->range_end - 1, tmp_middle_str);
+    memcpy(bkt_tree->range_start_str, tmp_middle_str, NODE_STR_LEN+1);
+    memcpy(bkt_tree->range_end_str, tmp_middle_str, NODE_STR_LEN+1);
+
+    bkt_tree->l->range_start = bkt_tree->range_start;
+    bkt_tree->l->range_end = bkt_tree->range_end - 1;
+
+    bkt_tree->r->range_start = bkt_tree->range_end -1;
+    bkt_tree->r->range_end = bkt_tree->range_end;
+
+    memcpy(bkt_tree->l->range_start_str, bkt_tree->range_start_str, NODE_STR_LEN +1);
+    memcpy(bkt_tree->l->range_end_str, tmp_middle_str, NODE_STR_LEN +1);
+
+    memcpy(bkt_tree->r->range_start_str, tmp_middle_str, NODE_STR_LEN+1);
+    memcpy(bkt_tree->r->range_end_str, bkt_tree->range_end_str, NODE_STR_LEN+1);
+
+    int ll = 0;
+    int rr = 0;
+    for (int j = 0; j < BUCKET_SIZE; ++j)
+    {
+        u_8 t[NODE_STR_LEN+1] = {0};
+        convert_node_str(bkt_tree->peer_nodes[j].node_str, t);
+        if (1 == cmp_node_str(t, tmp_middle_str))
+        {
+            memcpy(bkt_tree->r->peer_nodes[rr++], bkt_tree->peer_nodes[j], sizeof(peer_info_t));
+        }
+        else
+        {
+            memcpy(bkt_tree->l->peer_nodes[ll++], bkt_tree->peer_nodes[j], sizeof(peer_info_t));
+        }
+    }
+    //insert cur new node_str
+    if (1 == cmp_node_str(node_str, tmp_middle_str))
+    {
+        memcpy(bkt_tree->r->peer_nodes[rr].node_str, node_str +1, NODE_STR_LEN);
+        memcpy(bkt_tree->r->peer_nodes[rr].node_ip, node_ip, NODE_STR_IP_LEN);
+        memcpy(bkt_tree->r->peer_nodes[rr].node_port, node_port, NODE_STR_PORT_LEN);
+        bkt_tree->r->peer_nodes[rr].status = IN_USE;
+        time_t t ;
+        time(&t);
+        bkt_tree->r->peer_nodes[rr].update_time = t;
+    }
+    else
+    {
+        memcpy(bkt_tree->l->peer_nodes[ll].node_str, node_str +1, NODE_STR_LEN);
+        memcpy(bkt_tree->l->peer_nodes[ll].node_ip, node_ip, NODE_STR_IP_LEN);
+        memcpy(bkt_tree->l->peer_nodes[ll].node_port, node_port, NODE_STR_PORT_LEN);
+        bkt_tree->l->peer_nodes[ll].status = IN_USE;
+        time_t t ;
+        time(&t);
+        bkt_tree->l->peer_nodes[ll].update_time = t;
+    }
+    return 0;
+
+}
+
+/**
+* here node_str is NODE_STR_LEN
+*/
+int insert_into_bucket_tree(bucket_tree_node_t **root,u_8 *node_str, u_8 *node_ip, u_8 *node_port )
+{
+    bucket_tree_node_t *bkt_tree = *root;
+    if (NULL == bkt_tree)
+    {
+        bkt_tree = (bucket_tree_node_t*)malloc(sizeof(bucket_tree_node_t));
+        if (NULL == bkt_tree)
+        {
+            printf("malloc err\n");
+            return -1;
+        }
+        memset(bkt_tree, 0, sizeof(bucket_tree_node_t));
+        memcpy(bkt_tree->peer_nodes[0].node_str, node_str, NODE_STR_LEN * sizeof(char));
+        memcpy(bkt_tree->peer_nodes[0].node_ip, node_ip, sizeof(u_32));
+        memcpy(bkt_tree->peer_nodes[0].node_port, node_port, sizeof(u_16));
+        bkt_tree->peer_nodes[0].status = IN_USE;
+        time_t t ;
+        time(&t);
+        bkt_tree->peer_nodes[0].update_time = t;
+
+        u_8 start_str[NODE_STR_LEN +1 ] = {0};
+        generate_str_by_bit(0, start_str);
+        memcpy(bkt_tree->range_start_str, start_str, NODE_STR_LEN +1 );
+        bkt_tree->range_start = 0;
+
+        u_8 end_str[NODE_STR_LEN +1 ] = {0};
+        generate_str_by_bit(160, end_str);
+        memcpy(bkt_tree->range_end_str, end_str, NODE_STR_LEN +1 );
+        bkt_tree->range_end = 160;
+
+        bkt_tree->l = NULL;
+        bkt_tree->r = NULL;
+
+        return 0;
+
+    }
+
+    bucket_tree_node_t *the_node = NULL;
+    u_8 dst[NODE_STR_LEN+1] = {0};
+    convert_node_str(node_str, dst);
+    int ret = find_prop_node(bkt_tree, &the_node, dst);
+    if (-1 == ret)
+    {
+        printf("Not find !! must be err\n");
+        return -1;
+    }
+
+    ret = insert_into_bkt(the_node, dst, node_ip, node_port);
+    if (-1 == ret)
+    {
+        printf("Insert into bkt failed\n");
+        return -1;
+    }
+
+    return 0;
 }
 
 int read_route_tbl_frm_config(node_t *node)
@@ -473,6 +651,7 @@ int read_route_tbl_frm_config(node_t *node)
     if (0 == file_size)
     {
         printf("file is empty!\n");
+        fclose(fp);
         return 0;
     }
     //read self node id
@@ -482,6 +661,7 @@ int read_route_tbl_frm_config(node_t *node)
     if (read_len <= NODE_STR_LEN)
     {
         printf("read self node id err(%d)\n", read_len);
+        fclose(fp);
         return -1;
     }
 
@@ -491,18 +671,20 @@ int read_route_tbl_frm_config(node_t *node)
     if (read_len <= sizeof(u_32))
     {
         printf("read route num err(%u)\n", read_len);
+        fclose(fp);
         return -1;
     }
 
     printf("read route num : %u\n", route_num);
 
     //read route tbl
-    unsigned char * tmp_node_str = NULL;
+    u_8 * tmp_node_str = NULL;
     int str_len = (NODE_STR_LEN + NODE_STR_IP_LEN + NODE_STR_PORT_LEN);
     size_t buf_size = str_len * sizeof(unsigned char) * route_num;
-    tmp_node_str = (unsigned char*)malloc(buf_size);
+    tmp_node_str = (u_8*)malloc(buf_size);
     if (NULL == tmp_node_str)
     {
+        fclose(fp);
         printf("malloc mem (size: %u) err\n", buf_size);
         return -1;
     }
@@ -512,13 +694,25 @@ int read_route_tbl_frm_config(node_t *node)
     if (read_len != route_num)
     {
         printf("read err\n,real node cnt : %d\n", read_len);
+        free(tmp_node_str);
+        fclose(fp);
         return -1;
     }
 
     //update to route tbl in mem;
     //insert to bucket tree
+    u8 * temp =(u_8*)tmp_node_str;
+    for (int i= 0; i < route_num; ++i)
+    {
+        u_8 *node_str = temp;
+        u_8 *node_ip = temp + NODE_STR_LEN;
+        u_8 *node_port = temp + NODE_STR_LEN + NODE_STR_IP_LEN;
+        insert_into_bucket_tree(&node->bkt_tree, node_str, node_ip, node_port);
 
-
+        temp += (NODE_STR_LEN+ NODE_STR_IP_LEN + NODE_STR_PORT_LEN);
+    }
+    free(tmp_node_str);
+    fclose(fp);
 
     return 0;
 }

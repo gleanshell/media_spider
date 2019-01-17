@@ -483,12 +483,21 @@ int find_prop_node(bucket_tree_node_t *bkt_tree, bucket_tree_node_t **ret, u_8 *
 void generate_str_by_bit(int bits, char *out_str)
 {
     u_8 tmp_char[NODE_STR_LEN + 1] ={0};
+    if (0 == bits)
+    {
+        memcpy(out_str, tmp_char, NODE_STR_LEN + 1);
+        return;
+    }
     int idx = bits / sizeof(u_8);
     int rest = bits % sizeof(u_8);
     tmp_char[NODE_STR_LEN - idx] |= (u_8)(1U << (rest) );
-    memcpy(out_str, tmp_char, NODE_STR_LEN);
+    memcpy(out_str, tmp_char, NODE_STR_LEN + 1);
 }
 
+void generate_middle_str(u_8 *ret, u_8 *start_str, u_8 *end_str)
+{
+
+}
 /**
 * here node_str is NODE_STR_LEN +1
 */
@@ -640,7 +649,7 @@ int insert_into_bucket_tree(bucket_tree_node_t **root,u_8 *node_str, u_8 *node_i
 int read_route_tbl_frm_config(node_t *node)
 {
     FILE fp = NULL;
-    fp = fopen("dht_route.dat", rb+");
+    fp = fopen("dht_route.dat", "rb+");
     if (NULL == fp)
     {
         printf("open file failed\n);

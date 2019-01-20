@@ -183,6 +183,7 @@ int process_a_string(char*b,u_32 len,u_32 *pos,stack_t*s, int str_type, ben_dict
 
         int n = dict->ele_cnt;
         dict->e[n].str_type = DICT_KEY;
+        dict->e[n].str_len = str_len;
         memcpy(dict->e[n].str, tmp_big_buf, str_len+1 );
         str_ele_t * tmp_ele= &dict->e[n];
         dict->ele_cnt ++;
@@ -213,6 +214,7 @@ int process_a_string(char*b,u_32 len,u_32 *pos,stack_t*s, int str_type, ben_dict
 
         int n = dict->ele_cnt;
         dict->e[n].str_type = DICT_VAL;
+        dict->e[n].str_len = str_len;
         memcpy(dict->e[n].str, tmp_big_buf, (str_len+1) > MAX_STR_LEN? MAX_STR_LEN: str_len+1);
 
         str_ele_t * tmp_ele= &dict->e[n];
@@ -237,6 +239,7 @@ int process_a_string(char*b,u_32 len,u_32 *pos,stack_t*s, int str_type, ben_dict
     {
         int n = dict->ele_cnt;
         dict->e[n].str_type = DICT_VAL;
+        dict->e[n].str_len = str_len;
         dict->e[n].p.list_next_ref = NULL;
         memcpy(dict->e[n].str, tmp_big_buf, str_len+1 );
 
@@ -275,6 +278,7 @@ int process_a_int(char *b,u_32 len, u_32*pos, stack_t*s, ben_dict_t *dict,contex
     int n = dict->ele_cnt;
     dict->e[n].str_type = DICT_VAL;
     memcpy(dict->e[n].str, buf, read_len+1 );
+    dict->e[n].str_len = read_len;
 
     str_ele_t * tmp_ele= &dict->e[n];
     dict->ele_cnt ++;

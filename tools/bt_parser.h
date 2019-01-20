@@ -14,7 +14,7 @@ typedef unsigned long u_32;
 
 
 
-#define MAX_STACK_SIZE 100
+#define MAX_STACK_SIZE 500
 
 typedef struct
 {
@@ -48,6 +48,7 @@ typedef struct str_ele
 {
     char str[MAX_STR_LEN];
     int str_type;
+    int str_len;
     struct
     {
         struct str_ele *dict_val_ref;

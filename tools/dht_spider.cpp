@@ -16,6 +16,9 @@ extern void sha_1(u_char *s,u_64 total_len,u_32 *hh);
 extern int ben_coding(char*b, u_32 len,u_32 *pos);
 extern void print_result(stack_t *s, contex_stack_t *c);
 
+int insert_into_bucket_tree(bucket_tree_node_t **root,u_8 *node_str, u_8 *node_ip, u_8 *node_port, u_8 *self_node_id);
+
+u_8 tid = 0;
 /**
 * cmp str len is NODE_STR_LEN+1
 */
@@ -79,7 +82,9 @@ void update_bucket_update_time(bucket_t*bucket)
     time(&t);
     bucket->update_time = t;
 }
+
 /** cur code maybe cause stack overflow,optimaze later */
+/*
 int insert_into_bucket(unsigned char *node_str, bucket_t *bucket, node_t *node)
 {
     if (bucket->nodes_num >= BUCKET_SIZE)
@@ -144,12 +149,12 @@ int insert_into_bucket(unsigned char *node_str, bucket_t *bucket, node_t *node)
         update_bucket_update_time(bucket);
     }
     return OK;
-}
+}*/
 int ping_node(SOCKET s, sockaddr_in* addr, unsigned char* self_node_id)
 {
     //d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe
     unsigned char ping_str_start[100] = "d1:ad2:id20:";
-    unsigned char ping_str_end[100] = "e1:q4:ping1:t2:aa1:y1:qe";
+    unsigned char ping_str_end[100] = "e1:q4:ping1:t2:pp1:y1:qe";
     unsigned char ping_str_self_node_id[100] = "";
     memcpy(ping_str_self_node_id, self_node_id, NODE_STR_LEN);
     strcat((char*)ping_str_start, (char*)ping_str_self_node_id);
@@ -163,8 +168,46 @@ int query_node()
 {
     return OK;
 }
-int find_node()
+/**
+* find node :the t value,start with f.
+*/
+int find_node(SOCKET s, sockaddr_in* addr, u_8 * id, u_8 *tgt)
 {
+    //d1:ad2:id20:abcdefghij01234567896:target20:mnopqrstuvwxyz123456e1:q9:find_node1:t2:aa1:y1:qe
+    char str1[] = "d1:ad2:id20:";
+    char str2[] = "6:target20:";
+    char str3[] = "e1:q9:find_node1:t2:f";
+    tid +=1;
+    char str4[] = "1:y1:qe";
+
+    char snd_str[200] = {0};
+    char*send_str = &snd_str[0];
+    //save context and send
+    memcpy(send_str, (void*)(const char*)str1, strlen(str1));
+    send_str += strlen(str1);
+
+    memcpy(send_str, id, NODE_STR_LEN);
+    send_str += NODE_STR_LEN;
+
+    memcpy(send_str, str2, strlen(str2));
+    send_str += strlen(str2);
+
+    memcpy(send_str, tgt, NODE_STR_LEN);
+    send_str += NODE_STR_LEN;
+
+    memcpy(send_str, str3, strlen(str3));
+    send_str += strlen(str3);
+
+    *send_str ='d';// tid ++;
+    send_str +=1;
+
+    memcpy(send_str, str4, strlen(str4));
+
+    int send_len = strlen("d1:ad2:id20:abcdefghij01234567896:target20:mnopqrstuvwxyz123456e1:q9:find_node1:t2:aa1:y1:qe");
+
+    sendto(s,(char *)snd_str, 92, 0,(sockaddr*)addr, sizeof(struct sockaddr));
+    printf("send find node msg(len:%d): %s\n", send_len, snd_str);
+
     return OK;
 }
 
@@ -190,6 +233,36 @@ int on_find_node()
 int on_announce_node()
 {
     return OK;
+}
+
+int get_rsp_type(ben_dict_t *dict, int *rsp_type)
+{
+    str_ele_t *e = dict->e[0].p.dict_val_ref;
+    while (NULL != e)
+    {
+        if (0 == strcmp(e->str, "t"))
+        {
+            printf("\nget rsp t: %s\n", e->p.dict_val_ref->str);
+            char type_str = e->p.dict_val_ref->str[0];
+            switch (type_str)
+            {
+            case 'p':
+                *rsp_type = Y_PING_RSP;
+                return 0;
+            case 'f':
+                *rsp_type = Y_FIND_NODE_RSP;
+                return 0;
+            default:
+
+                break;
+
+            }
+            //return 0;
+        }
+        e = e->p.list_next_ref;
+    }
+    printf("\n not find ip value!\n");
+    return -1;
 }
 
 int get_ip_in_ping_rsp(ben_dict_t *dict, u_32 *ip, u_16 *port)
@@ -250,6 +323,77 @@ void inet_bin_to_string(u_32 ip, char output[])
             strcat(output, ".");
     }
 }
+
+void handle_ping_rsp()
+{
+
+}
+
+int handle_find_node_rsp(ben_dict_t *dict, node_t *node)
+{
+    u_8 id[NODE_STR_LEN] = {0};
+    u_8 nodes_str[500] = {0};
+    int nodes_str_len = 0;
+    bool find_node_str = false;
+    str_ele_t *e = dict->e[0].p.dict_val_ref;
+    while (NULL != e)
+    {
+        if (0 == strcmp(e->str, "r"))
+        {
+            printf("\nget find node rsp r: %s\n", e->p.dict_val_ref->str);
+            str_ele_t *e1 = e->p.dict_val_ref->p.dict_val_ref;
+            while (NULL != e1)
+            {
+                if (0 == strcmp(e1->str, "id"))
+                {
+                    printf("\nget find node rsp id of r: %s\n", e1->p.dict_val_ref->str);
+                    memcpy(id, e1->p.dict_val_ref->str, 20*sizeof(u_8));
+                }
+                if (0 == strcmp(e1->str, "nodes"))
+                {
+                    nodes_str_len = e1->p.dict_val_ref->str_len;
+                    printf("\nget ping rsp nodes of r(len:%d): %s\n", nodes_str_len, e1->p.dict_val_ref->str);
+                    memcpy(nodes_str, e1->p.dict_val_ref->str, nodes_str_len*sizeof(u_8));
+                    //return 0;
+                    find_node_str = true;
+                }
+            }
+
+        }
+        e = e->p.list_next_ref;
+    }
+    if (false == find_node_str)
+    {
+       printf("\n not find key r !\n");
+        return -1;
+    }
+    int node_ip_port_len = (NODE_STR_LEN + NODE_STR_IP_LEN + NODE_STR_PORT_LEN);
+    int node_num = nodes_str_len / node_ip_port_len;
+    printf("nodes_len (%d), num (%d)\n", nodes_str_len, node_num);
+    if (node_num *node_ip_port_len != nodes_str_len )
+    {
+        printf("nodes string is not compelete..\n");
+        return -1;
+    }
+
+    u_8 * temp =(u_8*)nodes_str;
+    int ret = -1;
+    for (int i= 0; i < node_num; ++i)
+    {
+        u_8 *node_str = temp;
+        u_8 *node_ip = temp + NODE_STR_LEN;
+        u_8 *node_port = temp + NODE_STR_LEN + NODE_STR_IP_LEN;
+        ret = insert_into_bucket_tree(&node->bkt_tree, node_str, node_ip, node_port, node->node_id);
+        if (-1 == ret)
+        {
+            return -1;
+        }
+
+        temp += (NODE_STR_LEN+ NODE_STR_IP_LEN + NODE_STR_PORT_LEN);
+    }
+    return 0;
+
+}
 int rcv_msg(SOCKET s)
 {
     struct sockaddr_in in_add;
@@ -265,6 +409,26 @@ int rcv_msg(SOCKET s)
         ben_coding(buffer, ret, &pos);
 
         print_result(&g_stack, &g_ctx_stack);
+        int rsp_type = -1;
+        get_rsp_type(&dict, &rsp_type);
+        if (-1 == rsp_type)
+        {
+            printf("get rsp type failed.\n");
+            return OK;
+        }
+        switch(rsp_type)
+        {
+        case 'p':
+            handle_ping_rsp();
+            break;
+        case 'f':
+            break;
+
+        default:
+            break;
+
+        }
+        /*
         u_32 ip = 0;
         u_16 port = 0;
         get_ip_in_ping_rsp(&dict, &ip, &port);
@@ -281,6 +445,7 @@ int rcv_msg(SOCKET s)
         inet_bin_to_string(_ip,dst);
         printf("\n the ip presentation is %s\n", dst);
 
+        */
         return OK;
 
     } else{
@@ -336,7 +501,8 @@ int random_node_id(unsigned char *node_id)
     u_32 _hash [5] = {0};
     sha_1((u_char*)time_str,strlen(time_str), _hash);
     print_hex((u_char*)_hash,20);
-    memcpy(node_id, "abcdefghij0123456789", NODE_STR_LEN);
+    memcpy(node_id, "abcdefghij0123456780", NODE_STR_LEN);
+    //memcpy(node_id, _hash, NODE_STR_LEN);
     return OK;
 }
 
@@ -480,7 +646,7 @@ int find_prop_node(bucket_tree_node_t *bkt_tree, bucket_tree_node_t **ret, u_8 *
 /**
 * bits range from 0,160
 */
-void generate_str_by_bit(int bits, char *out_str)
+void generate_str_by_bit(int bits, u_8 *out_str)
 {
     u_8 tmp_char[NODE_STR_LEN + 1] ={0};
     if (0 == bits)
@@ -494,15 +660,39 @@ void generate_str_by_bit(int bits, char *out_str)
     memcpy(out_str, tmp_char, NODE_STR_LEN + 1);
 }
 
+void big_bit_add(u_8 *a, u_8 *b, u_8 *ret)
+{
+    u_8 add_more = 0;
+    for (int i = NODE_STR_LEN; i >= 0; --i)
+    {
+        u_16 t = a[i] + b[i] + add_more;
+        ret[i] = (u_8)t;
+        add_more = (t>>8);
+    }
+}
+
+void big_bit_half(u_8 *a, u_8 *ret)
+{
+    u_8 lowest_bit = 0;
+    for (int i = 0; i <= NODE_STR_LEN; ++i)
+    {
+        ret[i] = (a[i] >> 1) | (lowest_bit << 7);
+        lowest_bit = a[i] & 0x1;
+    }
+}
+
 void generate_middle_str(u_8 *ret, u_8 *start_str, u_8 *end_str)
 {
-
+    u_8 _add[NODE_STR_LEN + 1] ={0};
+    big_bit_add(start_str, end_str, _add);
+    big_bit_half(_add, ret);
 }
 /**
 * here node_str is NODE_STR_LEN +1
 */
-int insert_into_bkt(bucket_tree_node_t *bkt_tree, u_8 *node_str, u_8 *node_ip, u_8 *node_port)
+int insert_into_bkt(bucket_tree_node_t *bkt_tree, u_8 *node_str, u_8 *node_ip, u_8 *node_port, u_8 *self_node_id)
 {
+    bool include_self = false;
     for (int i = 0; i < BUCKET_SIZE; ++ i)
     {
         if (bkt_tree->peer_nodes[i].status == NOT_USE)
@@ -516,6 +706,14 @@ int insert_into_bkt(bucket_tree_node_t *bkt_tree, u_8 *node_str, u_8 *node_ip, u
             bkt_tree->peer_nodes[i].update_time = t;
             return 0;
         }
+        if (0 == cmp_node_str(self_node_id, bkt_tree->peer_nodes[i].node_str))
+        {
+            include_self = true;
+        }
+    }
+    if (false == include_self)
+    {
+        return 0;
     }
     // bkt should split into two bucket
     bkt_tree->l = (bucket_tree_node_t*)malloc(sizeof(bucket_tree_node_t));
@@ -530,15 +728,10 @@ int insert_into_bkt(bucket_tree_node_t *bkt_tree, u_8 *node_str, u_8 *node_ip, u
     }
     //old bkt start = end
     u_8 tmp_middle_str[NODE_STR_LEN +1] ={0};
-    generate_str_by_bit(bkt_tree->range_end - 1, tmp_middle_str);
+    generate_middle_str(tmp_middle_str, bkt_tree->range_start_str, bkt_tree->range_end_str);
+
     memcpy(bkt_tree->range_start_str, tmp_middle_str, NODE_STR_LEN+1);
     memcpy(bkt_tree->range_end_str, tmp_middle_str, NODE_STR_LEN+1);
-
-    bkt_tree->l->range_start = bkt_tree->range_start;
-    bkt_tree->l->range_end = bkt_tree->range_end - 1;
-
-    bkt_tree->r->range_start = bkt_tree->range_end -1;
-    bkt_tree->r->range_end = bkt_tree->range_end;
 
     memcpy(bkt_tree->l->range_start_str, bkt_tree->range_start_str, NODE_STR_LEN +1);
     memcpy(bkt_tree->l->range_end_str, tmp_middle_str, NODE_STR_LEN +1);
@@ -552,17 +745,27 @@ int insert_into_bkt(bucket_tree_node_t *bkt_tree, u_8 *node_str, u_8 *node_ip, u
     {
         u_8 t[NODE_STR_LEN+1] = {0};
         convert_node_str(bkt_tree->peer_nodes[j].node_str, t);
-        if (1 == cmp_node_str(t, tmp_middle_str))
+        if (1 == cmp_node_str(tmp_middle_str, t))
         {
-            memcpy(bkt_tree->r->peer_nodes[rr++], bkt_tree->peer_nodes[j], sizeof(peer_info_t));
+            memcpy(&bkt_tree->r->peer_nodes[ll++], &bkt_tree->peer_nodes[j], sizeof(peer_info_t));
         }
         else
         {
-            memcpy(bkt_tree->l->peer_nodes[ll++], bkt_tree->peer_nodes[j], sizeof(peer_info_t));
+            memcpy(&bkt_tree->l->peer_nodes[rr++], &bkt_tree->peer_nodes[j], sizeof(peer_info_t));
         }
     }
     //insert cur new node_str
-    if (1 == cmp_node_str(node_str, tmp_middle_str))
+    if (1 == cmp_node_str(tmp_middle_str, node_str))
+    {
+        memcpy(bkt_tree->l->peer_nodes[ll].node_str, node_str +1, NODE_STR_LEN);
+        memcpy(bkt_tree->l->peer_nodes[ll].node_ip, node_ip, NODE_STR_IP_LEN);
+        memcpy(bkt_tree->l->peer_nodes[ll].node_port, node_port, NODE_STR_PORT_LEN);
+        bkt_tree->l->peer_nodes[ll].status = IN_USE;
+        time_t t ;
+        time(&t);
+        bkt_tree->r->peer_nodes[ll].update_time = t;
+    }
+    else
     {
         memcpy(bkt_tree->r->peer_nodes[rr].node_str, node_str +1, NODE_STR_LEN);
         memcpy(bkt_tree->r->peer_nodes[rr].node_ip, node_ip, NODE_STR_IP_LEN);
@@ -572,16 +775,6 @@ int insert_into_bkt(bucket_tree_node_t *bkt_tree, u_8 *node_str, u_8 *node_ip, u
         time(&t);
         bkt_tree->r->peer_nodes[rr].update_time = t;
     }
-    else
-    {
-        memcpy(bkt_tree->l->peer_nodes[ll].node_str, node_str +1, NODE_STR_LEN);
-        memcpy(bkt_tree->l->peer_nodes[ll].node_ip, node_ip, NODE_STR_IP_LEN);
-        memcpy(bkt_tree->l->peer_nodes[ll].node_port, node_port, NODE_STR_PORT_LEN);
-        bkt_tree->l->peer_nodes[ll].status = IN_USE;
-        time_t t ;
-        time(&t);
-        bkt_tree->l->peer_nodes[ll].update_time = t;
-    }
     return 0;
 
 }
@@ -589,7 +782,7 @@ int insert_into_bkt(bucket_tree_node_t *bkt_tree, u_8 *node_str, u_8 *node_ip, u
 /**
 * here node_str is NODE_STR_LEN
 */
-int insert_into_bucket_tree(bucket_tree_node_t **root,u_8 *node_str, u_8 *node_ip, u_8 *node_port )
+int insert_into_bucket_tree(bucket_tree_node_t **root,u_8 *node_str, u_8 *node_ip, u_8 *node_port, u_8 *self_node_id)
 {
     bucket_tree_node_t *bkt_tree = *root;
     if (NULL == bkt_tree)
@@ -612,12 +805,10 @@ int insert_into_bucket_tree(bucket_tree_node_t **root,u_8 *node_str, u_8 *node_i
         u_8 start_str[NODE_STR_LEN +1 ] = {0};
         generate_str_by_bit(0, start_str);
         memcpy(bkt_tree->range_start_str, start_str, NODE_STR_LEN +1 );
-        bkt_tree->range_start = 0;
 
         u_8 end_str[NODE_STR_LEN +1 ] = {0};
         generate_str_by_bit(160, end_str);
         memcpy(bkt_tree->range_end_str, end_str, NODE_STR_LEN +1 );
-        bkt_tree->range_end = 160;
 
         bkt_tree->l = NULL;
         bkt_tree->r = NULL;
@@ -636,7 +827,7 @@ int insert_into_bucket_tree(bucket_tree_node_t **root,u_8 *node_str, u_8 *node_i
         return -1;
     }
 
-    ret = insert_into_bkt(the_node, dst, node_ip, node_port);
+    ret = insert_into_bkt(the_node, dst, node_ip, node_port, self_node_id);
     if (-1 == ret)
     {
         printf("Insert into bkt failed\n");
@@ -648,11 +839,11 @@ int insert_into_bucket_tree(bucket_tree_node_t **root,u_8 *node_str, u_8 *node_i
 
 int read_route_tbl_frm_config(node_t *node)
 {
-    FILE fp = NULL;
+    FILE *fp = NULL;
     fp = fopen("dht_route.dat", "rb+");
     if (NULL == fp)
     {
-        printf("open file failed\n);
+        printf("open file failed\n");
         return -1;
     }
     fseek(fp, 0, SEEK_END);
@@ -676,7 +867,7 @@ int read_route_tbl_frm_config(node_t *node)
 
     //read route num
     u_32 route_num = 0;
-    read_len = fread(*route_num, sizeof(u_32), 1, fp);
+    read_len = fread(&route_num, sizeof(u_32), 1, fp);
     if (read_len <= sizeof(u_32))
     {
         printf("read route num err(%u)\n", read_len);
@@ -710,13 +901,20 @@ int read_route_tbl_frm_config(node_t *node)
 
     //update to route tbl in mem;
     //insert to bucket tree
-    u8 * temp =(u_8*)tmp_node_str;
+    u_8 * temp =(u_8*)tmp_node_str;
+    int ret = -1;
     for (int i= 0; i < route_num; ++i)
     {
         u_8 *node_str = temp;
         u_8 *node_ip = temp + NODE_STR_LEN;
         u_8 *node_port = temp + NODE_STR_LEN + NODE_STR_IP_LEN;
-        insert_into_bucket_tree(&node->bkt_tree, node_str, node_ip, node_port);
+        ret = insert_into_bucket_tree(&node->bkt_tree, node_str, node_ip, node_port, node->node_id);
+        if (-1 == ret)
+        {
+            free(tmp_node_str);
+            fclose(fp);
+            return -1;
+        }
 
         temp += (NODE_STR_LEN+ NODE_STR_IP_LEN + NODE_STR_PORT_LEN);
     }
@@ -728,20 +926,36 @@ int read_route_tbl_frm_config(node_t *node)
 
 int init_route_table(node_t*node)
 {
-
+    int ret = -1;
+    ret = read_route_tbl_frm_config(node);
+    /**
+    * if config has route , do not use bootstrap node to init, etc. dont below ping op.
+    */
+    if (NULL != node->bkt_tree)
+    {
+        printf("read route success.\n");
+        return 0;
+    }
+    printf("start init route table by find node!\n");
     //ping bootstrap node
     sockaddr_in remote_addr;
     remote_addr.sin_family = AF_INET;
     remote_addr.sin_port = htons(6881);
     //remote_addr.sin_port = htons(49246);
-    remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
-    //remote_addr.sin_addr.S_un.S_addr = (inet_addr("183.233.87.223"));
-     int ret = ping_node(node->send_socket,&remote_addr,node->node_id);
+    //remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
+    //remote_addr.sin_addr.S_un.S_addr = (inet_addr("87.98.162.88"));
+    ret = find_node(node->send_socket,&remote_addr,node->node_id, node->node_id);
+    ret = ping_node(node->send_socket,&remote_addr,node->node_id);
      int try_times = 100;
      while (try_times -- > 0)
      {
-         printf("rcv msg times %d:\n", 50 - try_times);
+         printf("rcv msg times %d:\n", try_times);
          ret = rcv_msg(node->send_socket);
+         if (ret == OK)
+         {
+             break;
+         }
+         ret = rcv_msg(node->recv_socket);
          if (ret == OK)
          {
              break;
@@ -777,6 +991,25 @@ int main()
     }
     init_route_table(&node);
     //worker(&node);
+
+    u_8 a[21] = {0x0,0xff,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+            0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0xff,0xff};
+
+    u_8 b[21] = {0x0,0xfe,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+            0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0xff};
+    u_8 res[21] ={0};
+    //big_bit_add(a, b, res);
+
+    big_bit_half(a, res);
+     for(int i = 0; i < 21; ++i)
+    {
+        printf("%02x ", a[i]);
+    }
+    printf("\n");
+    for(int i = 0; i < 21; ++i)
+    {
+        printf("%02x ", res[i]);
+    }
 
     clear_node(&node);
 

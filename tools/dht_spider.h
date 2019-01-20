@@ -35,7 +35,8 @@ enum OP_STATUS
 
 enum BUCKET_STATUS
 {
-    IN_USE = 100, NOT_USE = 101
+    NOT_USE = 0,
+    IN_USE
 };
 typedef struct bucket
 {
@@ -61,9 +62,9 @@ typedef struct bucket_tree_node
 {
     peer_info_t peer_nodes[BUCKET_SIZE];
     u_8 range_start_str[NODE_STR_LEN + 1];
-    int range_start;
+    //int range_start;
     u_8 range_end_str[NODE_STR_LEN + 1];
-    int range_end;
+    //int range_end;
     struct bucket_tree_node *l;
     struct bucket_tree_node *r;
 }bucket_tree_node_t;
@@ -76,6 +77,12 @@ typedef struct node
     bucket_tree_node_t *bkt_tree;
     int buckets_num;
 }node_t;
+
+enum
+{
+    Y_PING_RSP = 1,
+    Y_FIND_NODE_RSP
+};
 
 enum
 {

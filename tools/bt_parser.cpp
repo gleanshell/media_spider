@@ -215,7 +215,8 @@ int process_a_string(char*b,u_32 len,u_32 *pos,stack_t*s, int str_type, ben_dict
         int n = dict->ele_cnt;
         dict->e[n].str_type = DICT_VAL;
         dict->e[n].str_len = str_len;
-        memcpy(dict->e[n].str, tmp_big_buf, (str_len+1) > MAX_STR_LEN? MAX_STR_LEN: str_len+1);
+        //memcpy(dict->e[n].str, tmp_big_buf, (str_len+1) > MAX_STR_LEN? MAX_STR_LEN: str_len+1);
+        memcpy(dict->e[n].str, tmp_big_buf, (str_len+1) );
 
         str_ele_t * tmp_ele= &dict->e[n];
         dict->ele_cnt ++;

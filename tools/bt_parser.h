@@ -42,7 +42,7 @@ enum
     DICT_WAIT_VAL
 };
 
-#define MAX_STR_LEN 100
+#define MAX_STR_LEN 300
 
 typedef struct str_ele
 {

@@ -28,6 +28,12 @@ typedef unsigned char u_8;
 #define BUCKET_SIZE                  (8)
 #define BUCKET_NUM                   (128)
 
+#ifndef MAX_STACK_SIZE
+
+#define MAX_STACK_SIZE (500)
+
+#endif // MAX_STACK_SIZE
+
 enum OP_STATUS
 {
     OK = 0, ERR = -1
@@ -68,6 +74,12 @@ typedef struct bucket_tree_node
     struct bucket_tree_node *l;
     struct bucket_tree_node *r;
 }bucket_tree_node_t;
+
+typedef struct tree_stack
+{
+    bucket_tree_node_t *stack_array[MAX_STACK_SIZE];
+    int stack_size;
+}tree_stack_t;
 
 typedef struct node
 {

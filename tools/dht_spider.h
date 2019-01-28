@@ -87,7 +87,7 @@ typedef struct node
     SOCKET recv_socket;
     SOCKET send_socket;
     bucket_tree_node_t *bkt_tree;
-    int buckets_num;
+    int route_num;
 }node_t;
 
 enum

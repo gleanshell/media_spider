@@ -16,7 +16,7 @@ extern void sha_1(u_char *s,u_64 total_len,u_32 *hh);
 extern int ben_coding(char*b, u_32 len,u_32 *pos);
 extern void print_result(stack_t *s, contex_stack_t *c);
 
-int insert_into_bucket_tree(bucket_tree_node_t **root,u_8 *node_str, u_8 *node_ip, u_8 *node_port, u_8 *self_node_id);
+int insert_into_bucket_tree(node_t *node, bucket_tree_node_t **root,u_8 *node_str, u_8 *node_ip, u_8 *node_port, u_8 *self_node_id);
 int save_route_tbl_to_file(node_t* node);
 
 u_8 tid = 0;
@@ -126,73 +126,6 @@ void update_bucket_update_time(bucket_t*bucket)
     bucket->update_time = t;
 }
 
-/** cur code maybe cause stack overflow,optimaze later */
-/*
-int insert_into_bucket(unsigned char *node_str, bucket_t *bucket, node_t *node)
-{
-    if (bucket->nodes_num >= BUCKET_SIZE)
-    {
-        //split into two buckets
-        int low_start = bucket->range_start;
-        int low_end = bucket->range_end - 1;
-        int hi_start = bucket->range_end - 1;
-        int hi_end = bucket->range_end;
-
-        bucket_t tmp_low = {0};
-        bucket_t tmp_hi = {0};
-
-        tmp_low.range_start = low_start;
-        tmp_low.range_end = low_end;
-        tmp_low.nodes_num = 0;
-
-        tmp_hi.range_start = hi_start;
-        tmp_hi.range_end = hi_end;
-        tmp_hi.nodes_num = 0;
-
-        for (int i = 0; i < BUCKET_SIZE; ++i)
-        {
-            if (is_node_str_in_range(bucket->neibor_nodes[i],low_start, low_end))
-            {
-                insert_into_bucket(bucket->neibor_nodes[i], &tmp_low,node);
-            } else if (is_node_str_in_range(bucket->neibor_nodes[i], hi_start, hi_end))
-            {
-                insert_into_bucket(bucket->neibor_nodes[i], &tmp_hi, node);
-            } else{
-                printf("there must be some err\n");
-                print_hex(bucket->neibor_nodes[i],NODE_STR_LEN);
-                printf("low: %d->%d, hi:%d->%d\n", low_start, low_end, hi_start, hi_end);
-            }
-        }
-
-        if (is_node_str_in_range(node_str,low_start, low_end))
-        {
-            insert_into_bucket(node_str, &tmp_low, node);
-            update_bucket_update_time(&tmp_low);
-        } else if (is_node_str_in_range(node_str, hi_start, hi_end))
-        {
-            insert_into_bucket(node_str, &tmp_hi, node);
-            update_bucket_update_time(&tmp_hi);
-        } else{
-            printf("there must be some errs\n");
-            print_hex(node_str,NODE_STR_LEN);
-            printf("low: %d->%d, hi:%d->%d\n", low_start, low_end, hi_start, hi_end);
-        }
-        // cpy tmp low & tmp hi to node buckets
-        memcpy(bucket, &tmp_low, sizeof(bucket_t));
-        //node->buckets_num ++;
-        memcpy(&node->buckets[node->buckets_num], &tmp_hi, sizeof(bucket_t));
-        node->buckets_num ++;
-
-    }
-    else if(false == bucket_contain_node(bucket, node_str))
-    {
-        memcpy(bucket->neibor_nodes[bucket->nodes_num], node_str, NODE_STR_LEN);
-        bucket->status = IN_USE;
-        bucket->nodes_num ++;
-        update_bucket_update_time(bucket);
-    }
-    return OK;
-}*/
 int ping_node(SOCKET s, sockaddr_in* addr, unsigned char* self_node_id)
 {
     //d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe
@@ -306,6 +239,56 @@ int get_rsp_type(ben_dict_t *dict, int *rsp_type)
     }
     printf("\n not find ip value!\n");
     return -1;
+}
+
+int get_rsp_msg_type(ben_dict_t *dict, int *rsp_type)
+{
+    /**
+    * ping«Î«Û={"t":"aa", "y":"q","q":"ping", "a":{"id":"abcdefghij0123456789"}}
+
+B±‡¬Î=d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe
+
+ªÿ∏¥={"t":"aa", "y":"r", "r":{"id":"mnopqrstuvwxyz123456"}}
+
+B±‡¬Î=d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re
+
+
+find_node«Î«Û={"t":"aa", "y":"q","q":"find_node", "a":{"id":"abcdefghij0123456789","target":"mnopqrstuvwxyz123456"}}
+
+B±‡¬Î=d1:ad2:id20:abcdefghij01234567896:target20:mnopqrstuvwxyz123456e1:q9:find_node1:t2:aa1:y1:qe
+
+ªÿ∏¥={"t":"aa", "y":"r", "r":{"id":"0123456789abcdefghij", "nodes":"def456..."}}
+
+B±‡¬Î=d1:rd2:id20:0123456789abcdefghij5:nodes9:def456...e1:t2:aa1:y1:re
+
+
+get_peers«Î«Û={"t":"aa", "y":"q","q":"get_peers", "a":{"id":"abcdefghij0123456789","info_hash":"mnopqrstuvwxyz123456"}}
+
+B±‡¬Î=d1:ad2:id20:abcdefghij01234567899:info_hash20:mnopqrstuvwxyz123456e1:q9:get_peers1:t2:aa1:y1:qe
+
+ªÿ∏¥peers ={"t":"aa", "y":"r", "r":{"id":"abcdefghij0123456789", "token":"aoeusnth","values": ["axje.u", "idhtnm"]}}
+
+B±‡¬Î=d1:rd2:id20:abcdefghij01234567895:token8:aoeusnth6:valuesl6:axje.u6:idhtnmee1:t2:aa1:y1:re
+
+ªÿ∏¥◊ÓΩ”Ω¸µƒnodes= {"t":"aa", "y":"r", "r":{"id":"abcdefghij0123456789", "token":"aoeusnth","nodes": "def456..."}}
+
+B±‡¬Î=d1:rd2:id20:abcdefghij01234567895:nodes9:def456...5:token8:aoeusnthe1:t2:aa1:y1:re
+
+
+announce_peers«Î«Û={"t":"aa", "y":"q","q":"announce_peer", "a":{"id":"abcdefghij0123456789","info_hash":"mnopqrstuvwxyz123456", "port":6881, "token": "aoeusnth"}}
+
+B±‡¬Î=d1:ad2:id20:abcdefghij01234567899:info_hash20:<br />
+
+mnopqrstuvwxyz1234564:porti6881e5:token8:aoeusnthe1:q13:announce_peer1:t2:aa1:y1:qe
+
+ªÿ∏¥={"t":"aa", "y":"r", "r":{"id":"mnopqrstuvwxyz123456"}}
+
+B±‡¬Î=d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re
+
+
+    */
+
+
 }
 
 int get_ip_in_ping_rsp(ben_dict_t *dict, u_32 *ip, u_16 *port)
@@ -436,7 +419,7 @@ int handle_find_node_rsp(ben_dict_t *dict, node_t *node)
         u_8 *node_str = temp;
         u_8 *node_ip = temp + NODE_STR_LEN;
         u_8 *node_port = temp + NODE_STR_LEN + NODE_STR_IP_LEN;
-        ret = insert_into_bucket_tree(&node->bkt_tree, node_str, node_ip, node_port, node->node_id);
+        ret = insert_into_bucket_tree(node, &node->bkt_tree, node_str, node_ip, node_port, node->node_id);
         if (-1 == ret)
         {
             return -1;
@@ -557,9 +540,10 @@ int random_node_id(unsigned char *node_id)
     sprintf(time_str,"%u", t);
     u_32 _hash [5] = {0};
     sha_1((u_char*)time_str,strlen(time_str), _hash);
+    printf("random self id hash:");
     print_hex((u_char*)_hash,20);
-    memcpy(node_id, "abcdefghij0123456780", NODE_STR_LEN);
-    //memcpy(node_id, _hash, NODE_STR_LEN);
+    //memcpy(node_id, "abcdefghij0123456780", NODE_STR_LEN);
+    memcpy(node_id, _hash, NODE_STR_LEN);
     return OK;
 }
 
@@ -747,28 +731,47 @@ void generate_middle_str(u_8 *ret, u_8 *start_str, u_8 *end_str)
 /**
 * here node_str is NODE_STR_LEN +1
 */
-int insert_into_bkt(bucket_tree_node_t *bkt_tree, u_8 *node_str, u_8 *node_ip, u_8 *node_port, u_8 *self_node_id)
+int insert_into_bkt(node_t *node, bucket_tree_node_t *bkt_tree, u_8 *node_str, u_8 *node_ip, u_8 *node_port, u_8 *self_node_id)
 {
     bool include_self = false;
+    int first_empty_slot = -1;
     for (int i = 0; i < BUCKET_SIZE; ++ i)
     {
-        if (bkt_tree->peer_nodes[i].status == NOT_USE)
+        u_8 t[NODE_STR_LEN+1] = {0};
+        convert_node_str(bkt_tree->peer_nodes[i].node_str, t);
+
+        if (0 == cmp_node_str(node_str, t )) //same node_str
         {
-            bkt_tree->peer_nodes[i].status = IN_USE;
-            memcpy(bkt_tree->peer_nodes[i].node_str, node_str +1 , NODE_STR_LEN);
-            memcpy(bkt_tree->peer_nodes[i].node_ip, node_ip, NODE_STR_IP_LEN);
-            memcpy(bkt_tree->peer_nodes[i].node_port, node_port, NODE_STR_PORT_LEN);
-            time_t t ;
-            time(&t);
-            bkt_tree->peer_nodes[i].update_time = t;
-            printf("[debug] insert one to NOT_USE slot\n");
-            return 0;
+            if (bkt_tree->peer_nodes[i].status == NOT_USE)
+            {
+                printf("[ERROR] should'nt happen \n");
+                bkt_tree->peer_nodes[i].status = IN_USE;
+            }
+            return 0 ;
+        }
+        if (bkt_tree->peer_nodes[i].status == NOT_USE && -1 == first_empty_slot )
+        {
+            first_empty_slot = i;
         }
         if (0 == cmp_node_str(self_node_id, bkt_tree->peer_nodes[i].node_str))
         {
             include_self = true;
             printf("[debug] include self true\n");
         }
+    }
+
+    if (-1 != first_empty_slot )
+    {
+        bkt_tree->peer_nodes[first_empty_slot].status = IN_USE;
+        memcpy(bkt_tree->peer_nodes[first_empty_slot].node_str, node_str +1 , NODE_STR_LEN);
+        memcpy(bkt_tree->peer_nodes[first_empty_slot].node_ip, node_ip, NODE_STR_IP_LEN);
+        memcpy(bkt_tree->peer_nodes[first_empty_slot].node_port, node_port, NODE_STR_PORT_LEN);
+        time_t t ;
+        time(&t);
+        bkt_tree->peer_nodes[first_empty_slot].update_time = t;
+        node->route_num += 1;
+        printf("[debug] insert one to NOT_USE slot\n");
+        return 0;
     }
     if (false == include_self)
     {
@@ -836,6 +839,7 @@ int insert_into_bkt(bucket_tree_node_t *bkt_tree, u_8 *node_str, u_8 *node_ip, u
         time(&t);
         bkt_tree->r->peer_nodes[rr].update_time = t;
     }
+    node->route_num += 1;
     return 0;
 
 }
@@ -843,7 +847,7 @@ int insert_into_bkt(bucket_tree_node_t *bkt_tree, u_8 *node_str, u_8 *node_ip, u
 /**
 * here node_str is NODE_STR_LEN
 */
-int insert_into_bucket_tree(bucket_tree_node_t **bkt_tree,u_8 *node_str, u_8 *node_ip, u_8 *node_port, u_8 *self_node_id)
+int insert_into_bucket_tree(node_t *node, bucket_tree_node_t **bkt_tree,u_8 *node_str, u_8 *node_ip, u_8 *node_port, u_8 *self_node_id)
 {
     //bucket_tree_node_t *bkt_tree = *root;
     if (NULL == *bkt_tree)
@@ -873,6 +877,7 @@ int insert_into_bucket_tree(bucket_tree_node_t **bkt_tree,u_8 *node_str, u_8 *no
 
         (*bkt_tree)->l = NULL;
         (*bkt_tree)->r = NULL;
+        node->route_num += 1;
 
         printf("[debug] insert one to mem.\n");
 
@@ -890,7 +895,7 @@ int insert_into_bucket_tree(bucket_tree_node_t **bkt_tree,u_8 *node_str, u_8 *no
         return -1;
     }
 
-    ret = insert_into_bkt(the_node, dst, node_ip, node_port, self_node_id);
+    ret = insert_into_bkt(node, the_node, dst, node_ip, node_port, self_node_id);
     printf("----insert ip : %hhu.%hhu.%hhu.%hhu, port: %hu\n", node_ip[0],node_ip[1],node_ip[2],node_ip[3], *node_port);
     if (-1 == ret)
     {
@@ -904,7 +909,7 @@ int insert_into_bucket_tree(bucket_tree_node_t **bkt_tree,u_8 *node_str, u_8 *no
 int save_route_tbl_to_file(node_t* node)
 {
     FILE *fp = NULL;
-    fp = fopen("dht_route_s.dat", "rb+");
+    fp = fopen("dht_route_s.dat", "wb+");
     if (NULL == fp)
     {
         printf("open write file failed\n");
@@ -917,6 +922,9 @@ int save_route_tbl_to_file(node_t* node)
 
     bucket_tree_node_t *root = node->bkt_tree;
     printf("root is null ? %d\n", root ==NULL);
+
+    fwrite(node->node_id, 1, NODE_STR_LEN, fp);
+    fwrite(&node->route_num, 1, sizeof(int),fp);
 
     tree_push(t, &root);
 
@@ -957,7 +965,7 @@ int save_route_tbl_to_file(node_t* node)
 int read_route_tbl_frm_config(node_t *node)
 {
     FILE *fp = NULL;
-    fp = fopen("dht_route.dat", "rb");
+    fp = fopen("dht_route_s.dat", "rb");
     if (NULL == fp)
     {
         printf("open read file failed\n");
@@ -974,8 +982,8 @@ int read_route_tbl_frm_config(node_t *node)
     //read self node id
     //unsigned char self_node_id[NODE_STR_LEN] = {0};
     fseek(fp, 0, SEEK_SET);
-    size_t read_len = fread(node->node_id, NODE_STR_LEN, 1, fp);
-    if (read_len <= NODE_STR_LEN)
+    size_t read_len = fread(node->node_id, 1, NODE_STR_LEN, fp);
+    if (read_len != NODE_STR_LEN)
     {
         printf("read self node id err(%d)\n", read_len);
         fclose(fp);
@@ -983,16 +991,17 @@ int read_route_tbl_frm_config(node_t *node)
     }
 
     //read route num
-    u_32 route_num = 0;
-    read_len = fread(&route_num, sizeof(u_32), 1, fp);
-    if (read_len <= sizeof(u_32))
+    int route_num = 0;
+    read_len = fread(&route_num,  1, sizeof(int), fp);
+    if (read_len != sizeof(int))
     {
         printf("read route num err(%u)\n", read_len);
         fclose(fp);
         return -1;
     }
 
-    printf("read route num : %u\n", route_num);
+    printf("read route num : %d\n", route_num);
+    //node->route_num = route_num;
 
     //read route tbl
     u_8 * tmp_node_str = NULL;
@@ -1025,7 +1034,7 @@ int read_route_tbl_frm_config(node_t *node)
         u_8 *node_str = temp;
         u_8 *node_ip = temp + NODE_STR_LEN;
         u_8 *node_port = temp + NODE_STR_LEN + NODE_STR_IP_LEN;
-        ret = insert_into_bucket_tree(&node->bkt_tree, node_str, node_ip, node_port, node->node_id);
+        ret = insert_into_bucket_tree(node, &node->bkt_tree, node_str, node_ip, node_port, node->node_id);
         if (-1 == ret)
         {
             free(tmp_node_str);
@@ -1037,6 +1046,11 @@ int read_route_tbl_frm_config(node_t *node)
     }
     free(tmp_node_str);
     fclose(fp);
+
+    if (route_num != node->route_num)
+    {
+        printf("[ERROR] not equal! read from file (%d), inserted route_num (%d)\n", route_num, node->route_num);
+    }
 
     return 0;
 }
@@ -1108,25 +1122,9 @@ int main()
     }
     init_route_table(&node);
     //worker(&node);
+    // update route table by ping node in route table
 
-    u_8 a[21] = {0x0,0xff,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-            0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0xff,0xff};
-
-    u_8 b[21] = {0x0,0xfe,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-            0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0xff};
-    u_8 res[21] ={0};
-    //big_bit_add(a, b, res);
-
-    big_bit_half(a, res);
-     for(int i = 0; i < 21; ++i)
-    {
-        printf("%02x ", a[i]);
-    }
-    printf("\n");
-    for(int i = 0; i < 21; ++i)
-    {
-        printf("%02x ", res[i]);
-    }
+    // receive msg from other node.
 
     clear_node(&node);
 

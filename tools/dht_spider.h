@@ -92,15 +92,19 @@ typedef struct node
 
 enum
 {
-    Y_PING_RSP = 1,
-    Y_FIND_NODE_RSP
-};
-
-enum
-{
+    Y_TYPE_BEGIN,
     Y_TYPE_Q = 1, //request
     Y_TYPE_R,//response
-    Y_TYPE_E // response err
+    Y_TYPE_E, // response err
+    Y_TYPE_PING,
+    Y_TYPE_PING_RSP,
+    Y_TYPE_FIND_NODE,
+    Y_TYPE_FIND_NODE_RSP,
+    Y_TYPE_GET_PEER,
+    Y_TYPE_GET_PEER_RSP,
+    Y_TYPE_ANNOUNCE_PEER,
+    Y_TYPE_ANNOUNCE_PEER_RSP,
+    Y_TYPE_BUTT
 
 };
 

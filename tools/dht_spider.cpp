@@ -21,6 +21,16 @@ int save_route_tbl_to_file(node_t* node);
 
 u_8 tid = 0;
 
+u_16 dht_ntohs(u_16 x)
+{
+    u_8 *low = (u_8*)&x;
+    u_8 *high = (low + 1);
+    u_8 tmp = *low;
+    *low = *high;
+    *high = tmp;
+    return x;
+}
+
 int tree_push(tree_stack_t *s, bucket_tree_node_t** a)
 {
     if (s->stack_size >= MAX_STACK_SIZE)
@@ -211,7 +221,8 @@ int on_announce_node()
     return OK;
 }
 
-int get_rsp_type(ben_dict_t *dict, int *rsp_type)
+//peer node response my requst
+int get_peer_rsp_r_type(ben_dict_t *dict, int *type, u_16 *t)
 {
     str_ele_t *e = dict->e[0].p.dict_val_ref;
     while (NULL != e)
@@ -222,11 +233,17 @@ int get_rsp_type(ben_dict_t *dict, int *rsp_type)
             char type_str = e->p.dict_val_ref->str[0];
             switch (type_str)
             {
-            case 'p':
-                *rsp_type = Y_PING_RSP;
+            case 'p'://ping
+                *type = Y_TYPE_PING_RSP;
                 return 0;
-            case 'f':
-                *rsp_type = Y_FIND_NODE_RSP;
+            case 'f'://find_node
+                *type = Y_TYPE_FIND_NODE_RSP;
+                return 0;
+            case 'a'://announce peer
+                *type = Y_TYPE_ANNOUNCE_PEER_RSP;
+                return 0;
+            case 'g'://get peers
+                *type = Y_TYPE_GET_PEER_RSP;
                 return 0;
             default:
 
@@ -237,11 +254,47 @@ int get_rsp_type(ben_dict_t *dict, int *rsp_type)
         }
         e = e->p.list_next_ref;
     }
-    printf("\n not find ip value!\n");
+    return -1;
+}
+/**
+* peer request to me.
+*/
+int get_peer_req_q_type(ben_dict_t *dict, int *type)
+{
+    str_ele_t *e = dict->e[0].p.dict_val_ref;
+    while (NULL != e)
+    {
+        if (0 == strcmp(e->str, "q"))
+        {
+            printf("\nget rsp q: %s\n", e->p.dict_val_ref->str);
+            char type_str = e->p.dict_val_ref->str[0];
+            switch (type_str)
+            {
+            case 'p'://ping
+                *type = Y_TYPE_PING;
+                return 0;
+            case 'f'://find_node
+                *type = Y_TYPE_FIND_NODE;
+                return 0;
+            case 'a'://announce peer
+                *type = Y_TYPE_ANNOUNCE_PEER;
+                return 0;
+            case 'g'://get peers
+                *type = Y_TYPE_GET_PEER;
+                return 0;
+            default:
+
+                break;
+
+            }
+        }
+        e = e->p.list_next_ref;
+    }
     return -1;
 }
 
-int get_rsp_msg_type(ben_dict_t *dict, int *rsp_type)
+
+int get_rsp_msg_type(ben_dict_t *dict, int *rsp_msg_type)
 {
     /**
     * ping«Î«Û={"t":"aa", "y":"q","q":"ping", "a":{"id":"abcdefghij0123456789"}}
@@ -277,9 +330,7 @@ B±‡¬Î=d1:rd2:id20:abcdefghij01234567895:nodes9:def456...5:token8:aoeusnthe1:t2:a
 
 announce_peers«Î«Û={"t":"aa", "y":"q","q":"announce_peer", "a":{"id":"abcdefghij0123456789","info_hash":"mnopqrstuvwxyz123456", "port":6881, "token": "aoeusnth"}}
 
-B±‡¬Î=d1:ad2:id20:abcdefghij01234567899:info_hash20:<br />
-
-mnopqrstuvwxyz1234564:porti6881e5:token8:aoeusnthe1:q13:announce_peer1:t2:aa1:y1:qe
+B±‡¬Î=d1:ad2:id20:abcdefghij01234567899:info_hash20:mnopqrstuvwxyz1234564:porti6881e5:token8:aoeusnthe1:q13:announce_peer1:t2:aa1:y1:qe
 
 ªÿ∏¥={"t":"aa", "y":"r", "r":{"id":"mnopqrstuvwxyz123456"}}
 
@@ -287,6 +338,36 @@ B±‡¬Î=d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re
 
 
     */
+    u_16 t = 0;
+    str_ele_t *e = dict->e[0].p.dict_val_ref;
+    while (NULL != e)
+    {
+        if (0 == strcmp(e->str, "y"))
+        {
+            printf("\nget rsp y: %s\n", e->p.dict_val_ref->str);
+            char type_str = e->p.dict_val_ref->str[0];
+            switch (type_str)
+            {
+            case 'q'://req
+                //*rsp_msg_type = Y_TYPE_Q;
+                return get_peer_req_q_type(dict, rsp_msg_type);
+            case 'r'://rsp
+                *rsp_msg_type = Y_TYPE_R;
+
+                return get_peer_rsp_r_type(dict, rsp_msg_type,&t);
+            case 'e'://rsp err
+                *rsp_msg_type = Y_TYPE_E;
+                return 0;
+            default:
+
+                break;
+
+            }
+        }
+        e = e->p.list_next_ref;
+    }
+    printf("\n not find y value!\n");
+    return -1;
 
 
 }
@@ -448,7 +529,7 @@ int rcv_msg(SOCKET s, node_t*node)
 
         print_result(&g_stack, &g_ctx_stack);
         int rsp_type = -1;
-        get_rsp_type(&dict, &rsp_type);
+        //get_rsp_type(&dict, &rsp_type);
         if (-1 == rsp_type)
         {
             printf("get rsp type failed.\n");
@@ -456,11 +537,11 @@ int rcv_msg(SOCKET s, node_t*node)
         }
         switch(rsp_type)
         {
-        case Y_PING_RSP:
+        case Y_TYPE_PING_RSP:
             handle_ping_rsp();
 
             break;
-        case Y_FIND_NODE_RSP:
+        case Y_TYPE_FIND_NODE_RSP:
             handle_find_node_rsp(&dict, node);
             break;
 
@@ -1110,6 +1191,21 @@ int worker(node_t* node)
     }
 }
 
+char type_desc[Y_TYPE_BUTT][30]=
+{
+    "BEGIN",
+    "Y_TYPE_Q",
+    "Y_TYPE_R",//response
+    "Y_TYPE_E", // response err
+    "Y_TYPE_PING",
+    "Y_TYPE_PING_RSP",
+    "Y_TYPE_FIND_NODE",
+    "Y_TYPE_FIND_NODE_RSP",
+    "Y_TYPE_GET_PEER",
+    "Y_TYPE_GET_PEER_RSP",
+    "Y_TYPE_ANNOUNCE_PEER",
+    "Y_TYPE_ANNOUNCE_PEER_RSP"
+};
 int main()
 {
     printf("ok dht spider\n");
@@ -1127,6 +1223,90 @@ int main()
     // receive msg from other node.
 
     clear_node(&node);
+
+    printf("\ntest byte order of mingwin:\n");
+
+    u_16 x = 0x1;
+    u_8 *y = (u_8*)&x;
+
+    int type = 0;
+    printf("lower address of x is: %hhu, higher address of x is %hhu:\n", *y, *(y+1));
+
+
+    char test_ping[]="d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe";
+    u_32 pos = 0;
+    type = 0;
+    memset(&dict, 0, sizeof(ben_dict_t));
+    ben_coding(test_ping,strlen(test_ping),&pos);
+    get_rsp_msg_type(&dict, &type);
+    printf("get test_ping msg type  : %d -> %s\n", type, type_desc[type]);
+
+    char test_ping_rsp[]="d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:pa1:y1:re";
+    pos = 0;
+    type = 0;
+    memset(&dict, 0, sizeof(ben_dict_t));
+    ben_coding(test_ping_rsp,strlen(test_ping),&pos);
+    get_rsp_msg_type(&dict, &type);
+    printf("get test_ping_rsp msg type : %d -> %s\n", type, type_desc[type]);
+
+
+    char test_find_node_req[]="d1:ad2:id20:abcdefghij01234567896:target20:mnopqrstuvwxyz123456e1:q9:find_node1:t2:fa1:y1:qe";
+    pos = 0;
+    type = 0;
+    memset(&dict, 0, sizeof(ben_dict_t));
+    ben_coding(test_find_node_req,strlen(test_find_node_req),&pos);
+    get_rsp_msg_type(&dict, &type);
+    printf("get test_find_node_req msg type : %d -> %s\n", type, type_desc[type]);
+
+    char test_find_node_rsp[]="d1:rd2:id20:0123456789abcdefghij5:nodes9:def456...e1:t2:fa1:y1:re";
+    pos = 0;
+    type = 0;
+    memset(&dict, 0, sizeof(ben_dict_t));
+    ben_coding(test_find_node_rsp,strlen(test_find_node_rsp),&pos);
+    get_rsp_msg_type(&dict, &type);
+    printf("get test_find_node_rsp msg type : %d -> %s\n", type, type_desc[type]);
+
+
+    char test_get_peers_req[]="d1:ad2:id20:abcdefghij01234567899:info_hash20:mnopqrstuvwxyz123456e1:q9:get_peers1:t2:ga1:y1:qe";
+    pos = 0;
+    type = 0;
+    memset(&dict, 0, sizeof(ben_dict_t));
+    ben_coding(test_get_peers_req,strlen(test_get_peers_req),&pos);
+    get_rsp_msg_type(&dict, &type);
+    printf("get test_get_peers_req msg type : %d -> %s\n", type, type_desc[type]);
+
+    char test_get_peers_rsp1[]="d1:rd2:id20:abcdefghij01234567895:token8:aoeusnth6:valuesl6:axje.u6:idhtnmee1:t2:ga1:y1:re";
+    pos = 0;
+    type = 0;
+    memset(&dict, 0, sizeof(ben_dict_t));
+    ben_coding(test_get_peers_rsp1,strlen(test_get_peers_rsp1),&pos);
+    get_rsp_msg_type(&dict, &type);
+    printf("get test_get_peers_rsp1 msg type : %d -> %s\n", type, type_desc[type]);
+
+    char test_get_peers_rsp2[]="d1:rd2:id20:abcdefghij01234567895:nodes9:def456...5:token8:aoeusnthe1:t2:ga1:y1:re";
+    pos = 0;
+    type = 0;
+    memset(&dict, 0, sizeof(ben_dict_t));
+    ben_coding(test_get_peers_rsp2,strlen(test_get_peers_rsp2),&pos);
+    get_rsp_msg_type(&dict, &type);
+    printf("get test_get_peers_rsp2 msg type : %d -> %s\n", type, type_desc[type]);
+
+
+    char test_announce_req[]="d1:ad2:id20:abcdefghij01234567899:info_hash20:mnopqrstuvwxyz1234564:porti6881e5:token8:aoeusnthe1:q13:announce_peer1:t2:aa1:y1:qe";
+    pos = 0;
+    type = 0;
+    memset(&dict, 0, sizeof(ben_dict_t));
+    ben_coding(test_announce_req,strlen(test_announce_req),&pos);
+    get_rsp_msg_type(&dict, &type);
+    printf("get test_announce_req msg type : %d -> %s\n", type, type_desc[type]);
+
+    char test_announce_rsp[]="d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re";
+    pos = 0;
+    type = 0;
+    memset(&dict, 0, sizeof(ben_dict_t));
+    ben_coding(test_announce_rsp,strlen(test_announce_rsp),&pos);
+    get_rsp_msg_type(&dict, &type);
+    printf("get test_announce_rsp msg type : %d -> %s\n", type, type_desc[type]);
 
     return 0;
 }

@@ -6,6 +6,7 @@
 #include "dht_spider.h"
 #include "bt_parser.h"
 
+
 extern stack_t g_stack;
 extern contex_stack_t g_ctx_stack;
 extern ben_dict_t dict;
@@ -20,6 +21,9 @@ int insert_into_bucket_tree(node_t *node, bucket_tree_node_t **root,u_8 *node_st
 int save_route_tbl_to_file(node_t* node);
 
 u_8 tid = 0;
+
+msg_q_t snd_q;
+msg_q_t rcv_q;
 
 u_16 dht_ntohs(u_16 x)
 {
@@ -523,13 +527,19 @@ int rcv_msg(SOCKET s, node_t*node)
     if (ret > 0)
     {
         printf("rcv msg:%s\n", buffer);
-        u_32 len = strlen(buffer);
+        msg_t *m = (msg_t*)malloc(sizeof(msg_t));
+        m->addr = in_add;
+        m->buf_len = ret;
+        memcpy(m->buf, buffer, ret);
+        list_add_tail(m_queue.rcv_q.node,&m->node);
+        /*
+
         u_32 pos = 0;
         ben_coding(buffer, ret, &pos);
 
-        print_result(&g_stack, &g_ctx_stack);
+        //print_result(&g_stack, &g_ctx_stack);
         int rsp_type = -1;
-        //get_rsp_type(&dict, &rsp_type);
+        get_rsp_msg_type(&dict, &rsp_type);
         if (-1 == rsp_type)
         {
             printf("get rsp type failed.\n");
@@ -549,55 +559,10 @@ int rcv_msg(SOCKET s, node_t*node)
             break;
 
         }
-        /*
-        u_32 ip = 0;
-        u_16 port = 0;
-        get_ip_in_ping_rsp(&dict, &ip, &port);
-
-        u_8 id[21] ={0};
-        get_id_in_ping_rsp(&dict, id);
-
-        printf("\nbefore covert ip:%u-> %x\n port: %hu -> %x\n", ip, ip, port, port);
-        u_32 _ip = ntohl(ip);
-        u_16 _port = ntohs(port);
-        printf("\nafter covert ip:%u-> %x\nport: %hu -> %x\n", _ip, _ip, _port, _port);
-
-        char dst[16] = {0};
-        inet_bin_to_string(_ip,dst);
-        printf("\n the ip presentation is %s\n", dst);
-
-        */
+*/
         return OK;
 
     } else{
-        //char *buffer = "d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re";
-    //char *buffer = "d2:ip6:10.1.11:rd2:id20:11111111111111111111e1:t2:aa1:y1:re";
-        //char b[500] = "d1:eli201e23:A Generic Error Ocurrede1:t2:aa1:y1:ee";
-        /*char b[500]= "d2:ip6:10.1.11:rd2:id20:11111111111111111111e1:t2:aa1:y1:re";
-        printf("rcv msg:%s\n", b);
-        u_32 len = strlen(b);
-        u_32 pos = 0;
-        ben_coding(b, len, &pos);
-        print_result(&g_stack, &g_ctx_stack);
-        u_32 ip = 0;
-        u_16 port = 0;
-        get_ip_in_ping_rsp(&dict, &ip, &port);
-
-        u_8 id[21] ={0};
-        get_id_in_ping_rsp(&dict, id);
-
-        printf("\nbefore covert ip:%u-> %x\n port: %hu -> %x\n", ip, ip, port, port);
-        u_32 _ip = ntohl(ip);
-        u_16 _port = ntohs(port);
-        printf("\nafter covert ip:%u-> %x\nport: %hu -> %x\n", _ip, _ip, _port, _port);
-
-        char dst[16] = {0};
-        inet_bin_to_string(_ip,dst);
-        printf("\n the ip presentation is %s\n", dst);
-
-        return OK;*/
-
-        printf("no rcv msg\n");
         return ERR;
     }
 }
@@ -1182,6 +1147,99 @@ int init_route_table(node_t*node)
      return ret;
 }
 
+void _send_first_msg(node_t*nod)
+{
+    list_head_t *first = snd_q.m_q.node.next;
+    msg_t *m = container_of(msg_t, node, first);
+
+    sendto(nod->send_socket,(char *)m->buf, m->buf_len, 0,(sockaddr*)&m->addr, sizeof(struct sockaddr));
+
+    list_del(first);
+    free(m);
+    m = NULL;
+}
+
+void *process_rcv_msg(void*arg)
+{
+
+}
+
+/**
+* send/receive req msg(s), just use one thread to send and receive data
+* block condition: receive_q is full and send_q is empty
+* when other thread op receiv_q or send_q, then signal cur thread.
+*/
+void* net_thread(void*arg)
+{
+    list_init(rcv_q.q.node);
+    list_init(snd_q.q.node);
+
+    node_t *nod = (node_t*)arg;
+    while(true)
+    {
+        pthread_mutex_lock(&snd_q.mutex);
+
+        while (snd_q.msg_cnt <= 0 &&  >= MAX_MSG_QUEUE_SIZE)
+        {
+            pthread_cond_wait(&m_queue.cond, &m_queue.mutex);
+        }
+        if (m_queue.snd_msg_cnt > 0)
+        {
+            _send_first_msg(nod);
+        }
+
+        if (m_queue.rcv_msg_cnt < MAX_MSG_QUEUE_SIZE)
+        {
+            rcv_msg(nod->send_socket, nod);
+        }
+
+
+        pthread_mutex_unlock(&m_queue.mutex);
+
+    }
+}
+
+/**
+* rcv req msg(s),
+*/
+void* rcv_thread(void*arg)
+{
+    node_t *nod = (node_t*)arg;
+    while(true)
+    {
+        pthread_mutex_lock(&snd_q.mutex);
+
+        while (snd_q.msg_cnt >= MAX_MSG_QUEUE_SIZE)
+        {
+            pthread_cond_wait(&snd_q.cond, &snd_q.mutex);
+        }
+
+        struct sockaddr_in in_add;
+        int in_add_len = sizeof(struct sockaddr_in);
+        int buffer_len = 500;
+        char buffer[500] = {0};
+        int ret = recvfrom(nod->send_socket,buffer,buffer_len,0,(sockaddr*)&in_add,&in_add_len);
+        if (ret > 0)
+        {
+
+        }
+        msg_t *m = (msg_t*)malloc(sizeof(msg_t));
+
+        list_head_t *first = snd_q.m_q.node.next;
+        //msg_t *m = container_of(msg_t, node, first);
+        //sockaddr_in addr = m->addr;
+
+        sendto(nod->send_socket,(char *)m->buf, m->buf_len, 0,(sockaddr*)&m->addr, sizeof(struct sockaddr));
+
+        list_del(first);
+        free(m);
+        m = NULL;
+
+        pthread_mutex_unlock(&snd_q.mutex);
+
+    }
+}
+
 int worker(node_t* node)
 {
 
@@ -1216,21 +1274,21 @@ int main()
         clear_node(&node);
         return -1;
     }
-    init_route_table(&node);
+    //init_route_table(&node);
     //worker(&node);
     // update route table by ping node in route table
 
     // receive msg from other node.
 
     clear_node(&node);
-
+/*
     printf("\ntest byte order of mingwin:\n");
 
     u_16 x = 0x1;
     u_8 *y = (u_8*)&x;
 
     int type = 0;
-    printf("lower address of x is: %hhu, higher address of x is %hhu:\n", *y, *(y+1));
+    printf("lower address of x is: %hu, higher address of x is %hu:\n", *y, *(y+1));
 
 
     char test_ping[]="d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe";
@@ -1307,6 +1365,23 @@ int main()
     ben_coding(test_announce_rsp,strlen(test_announce_rsp),&pos);
     get_rsp_msg_type(&dict, &type);
     printf("get test_announce_rsp msg type : %d -> %s\n", type, type_desc[type]);
+*/
+    pthread_mutex_init(&mutex, NULL);
+    pthread_t tid[2] ={0};
+    pthread_create(&tid[0], NULL, send_thread, NULL);
+    pthread_create(&tid[1], NULL, rcv_thread, NULL);
+
+
+    int i=100;
+    while(i-- > 0)
+    {
+        pthread_mutex_lock(&mutex);
+        printf(" main thread  msg\r\n");
+        pthread_mutex_unlock(&mutex);
+        Sleep(500);
+    }
+
+
 
     return 0;
 }

@@ -3,7 +3,10 @@
 //
 
 #include <winsock.h>
-#include <time.h>
+//#include <time.h>
+#include "list.h"
+
+#include<pthread.h>
 
 #ifndef BT_PARSER_H
 
@@ -107,6 +110,24 @@ enum
     Y_TYPE_BUTT
 
 };
+
+typedef struct msg
+{
+    time_t t;
+    char buf[500];
+    int buf_len;
+    sockaddr_in addr;
+    list_head_t node;
+}msg_t;
+
+#define MAX_MSG_QUEUE_SIZE (10000)
+typedef struct msq_q
+{
+    msg_t q;
+    int msg_cnt;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+}msg_q_t;
 
 typedef struct msg_ctx
 {

@@ -20,10 +20,25 @@ extern void print_result(stack_t *s, contex_stack_t *c);
 int insert_into_bucket_tree(node_t *node, bucket_tree_node_t **root,u_8 *node_str, u_8 *node_ip, u_8 *node_port, u_8 *self_node_id);
 int save_route_tbl_to_file(node_t* node);
 
+char type_desc[Y_TYPE_BUTT][30]=
+{
+    "BEGIN",
+    "Y_TYPE_Q",
+    "Y_TYPE_R",//response
+    "Y_TYPE_E", // response err
+    "Y_TYPE_PING",
+    "Y_TYPE_PING_RSP",
+    "Y_TYPE_FIND_NODE",
+    "Y_TYPE_FIND_NODE_RSP",
+    "Y_TYPE_GET_PEER",
+    "Y_TYPE_GET_PEER_RSP",
+    "Y_TYPE_ANNOUNCE_PEER",
+    "Y_TYPE_ANNOUNCE_PEER_RSP"
+};
+
 u_8 tid = 0;
 
-msg_q_t snd_q;
-msg_q_t rcv_q;
+msg_q_mgr_t q_mgr;
 
 u_16 dht_ntohs(u_16 x)
 {
@@ -531,7 +546,8 @@ int rcv_msg(SOCKET s, node_t*node)
         m->addr = in_add;
         m->buf_len = ret;
         memcpy(m->buf, buffer, ret);
-        list_add_tail(m_queue.rcv_q.node,&m->node);
+        list_add_tail(&q_mgr.rcv_q.q.node,&m->node);
+        q_mgr.rcv_q.msg_cnt += 1;
         /*
 
         u_32 pos = 0;
@@ -1119,15 +1135,15 @@ int init_route_table(node_t*node)
     remote_addr.sin_family = AF_INET;
     remote_addr.sin_port = htons(6881);
     //remote_addr.sin_port = htons(49246);
-    //remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
-    remote_addr.sin_addr.S_un.S_addr = (inet_addr("87.98.162.88"));
-    ret = find_node(node->send_socket,&remote_addr,node->node_id, node->node_id);
-    //ret = ping_node(node->send_socket,&remote_addr,node->node_id);
-     int try_times = 100;
+    remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
+    //remote_addr.sin_addr.S_un.S_addr = (inet_addr("87.98.162.88"));
+    //ret = find_node(node->recv_socket,&remote_addr,node->node_id, node->node_id);
+    ret = ping_node(node->recv_socket,&remote_addr,node->node_id);
+     int try_times = 200;
      while (try_times -- > 0)
      {
          printf("rcv msg times %d:\n", try_times);
-         ret = rcv_msg(node->send_socket, node);
+         ret = rcv_msg(node->recv_socket, node);
          if (ret == OK)
          {
              break;
@@ -1149,18 +1165,98 @@ int init_route_table(node_t*node)
 
 void _send_first_msg(node_t*nod)
 {
-    list_head_t *first = snd_q.m_q.node.next;
+    list_head_t *first = q_mgr.snd_q.q.node.next;
     msg_t *m = container_of(msg_t, node, first);
 
-    sendto(nod->send_socket,(char *)m->buf, m->buf_len, 0,(sockaddr*)&m->addr, sizeof(struct sockaddr));
+    sendto(nod->recv_socket,(char *)m->buf, m->buf_len, 0,(sockaddr*)&m->addr, sizeof(struct sockaddr));
 
     list_del(first);
     free(m);
     m = NULL;
 }
 
-void *process_rcv_msg(void*arg)
+/**
+* timer for refresh route table
+*/
+void *timer_thread(void*arg)
 {
+    node_t *nod = (node_t*)arg;
+    int i = 0;
+    while(true)
+    {
+        printf("re-init (%d) time\n", ++i);
+        sockaddr_in remote_addr;
+        remote_addr.sin_family = AF_INET;
+        remote_addr.sin_port = htons(6881);
+        remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
+        //remote_addr.sin_addr.S_un.S_addr = (inet_addr("87.98.162.88"));
+        int ret = find_node(nod->recv_socket,&remote_addr,nod->node_id, nod->node_id);
+        ret = ping_node(nod->recv_socket,&remote_addr,nod->node_id);
+
+        Sleep(5000);
+    }
+}
+
+/**
+* process received msg in rcv_q
+*/
+void *process_rcv_msg_thread(void*arg)
+{
+    node_t *nod = (node_t*)arg;
+    while(true)
+    {
+        pthread_mutex_lock(&q_mgr.rcv_q.mutex);
+
+        while(q_mgr.rcv_q.msg_cnt <= 0)
+        {
+            printf("rcv msg q is empty\n");
+            pthread_cond_wait(&q_mgr.rcv_q.cond, &q_mgr.rcv_q.mutex);
+        }
+        memset(&dict, 0, sizeof(ben_dict_t));
+        list_head_t *first = q_mgr.snd_q.q.node.next;
+        msg_t *m = container_of(msg_t, node, first);
+        u_32 pos = 0;
+
+        ben_coding(m->buf, m->buf_len, &pos);
+
+        free(m);
+        m = NULL;
+        list_del(first);
+
+        int rsp_type = -1;
+        get_rsp_msg_type(&dict, &rsp_type);
+        if (-1 == rsp_type)
+        {
+            printf("get rsp type failed.\n");
+            return NULL;
+        }
+        printf("handle rcv msg : type -> %s\n", type_desc[rsp_type]);
+        switch(rsp_type)
+        {
+        case Y_TYPE_PING:
+            break;
+        case Y_TYPE_PING_RSP:
+            handle_ping_rsp();
+            break;
+        case Y_TYPE_FIND_NODE:
+            break;
+        case Y_TYPE_FIND_NODE_RSP:
+            handle_find_node_rsp(&dict, nod);
+            break;
+        case Y_TYPE_GET_PEER:
+        case Y_TYPE_GET_PEER_RSP:
+            break;
+        case Y_TYPE_ANNOUNCE_PEER:
+        case Y_TYPE_ANNOUNCE_PEER_RSP:
+            break;
+
+        default:
+            break;
+
+        }
+
+        pthread_mutex_unlock(&q_mgr.rcv_q.mutex);
+    }
 
 }
 
@@ -1171,99 +1267,39 @@ void *process_rcv_msg(void*arg)
 */
 void* net_thread(void*arg)
 {
-    list_init(rcv_q.q.node);
-    list_init(snd_q.q.node);
 
     node_t *nod = (node_t*)arg;
     while(true)
     {
-        pthread_mutex_lock(&snd_q.mutex);
+        pthread_mutex_lock(&q_mgr.mutex);
 
-        while (snd_q.msg_cnt <= 0 &&  >= MAX_MSG_QUEUE_SIZE)
+        while (q_mgr.snd_q.msg_cnt <= 0 &&  q_mgr.rcv_q.msg_cnt >= MAX_MSG_QUEUE_SIZE)
         {
-            pthread_cond_wait(&m_queue.cond, &m_queue.mutex);
+            pthread_cond_wait(&q_mgr.cond, &q_mgr.mutex);
         }
-        if (m_queue.snd_msg_cnt > 0)
+
+        pthread_mutex_unlock(&q_mgr.mutex);
+
+        pthread_mutex_lock(&q_mgr.snd_q.mutex);
+        if (q_mgr.snd_q.msg_cnt > 0)
         {
             _send_first_msg(nod);
         }
+        pthread_mutex_unlock(&q_mgr.snd_q.mutex);
 
-        if (m_queue.rcv_msg_cnt < MAX_MSG_QUEUE_SIZE)
+        pthread_mutex_lock(&q_mgr.rcv_q.mutex);
+        if (q_mgr.rcv_q.msg_cnt < MAX_MSG_QUEUE_SIZE)
         {
+            //printf("rcv msg...\n");
             rcv_msg(nod->send_socket, nod);
         }
 
-
-        pthread_mutex_unlock(&m_queue.mutex);
-
-    }
-}
-
-/**
-* rcv req msg(s),
-*/
-void* rcv_thread(void*arg)
-{
-    node_t *nod = (node_t*)arg;
-    while(true)
-    {
-        pthread_mutex_lock(&snd_q.mutex);
-
-        while (snd_q.msg_cnt >= MAX_MSG_QUEUE_SIZE)
-        {
-            pthread_cond_wait(&snd_q.cond, &snd_q.mutex);
-        }
-
-        struct sockaddr_in in_add;
-        int in_add_len = sizeof(struct sockaddr_in);
-        int buffer_len = 500;
-        char buffer[500] = {0};
-        int ret = recvfrom(nod->send_socket,buffer,buffer_len,0,(sockaddr*)&in_add,&in_add_len);
-        if (ret > 0)
-        {
-
-        }
-        msg_t *m = (msg_t*)malloc(sizeof(msg_t));
-
-        list_head_t *first = snd_q.m_q.node.next;
-        //msg_t *m = container_of(msg_t, node, first);
-        //sockaddr_in addr = m->addr;
-
-        sendto(nod->send_socket,(char *)m->buf, m->buf_len, 0,(sockaddr*)&m->addr, sizeof(struct sockaddr));
-
-        list_del(first);
-        free(m);
-        m = NULL;
-
-        pthread_mutex_unlock(&snd_q.mutex);
+        pthread_mutex_unlock(&q_mgr.rcv_q.mutex);
 
     }
 }
 
-int worker(node_t* node)
-{
 
-    while(true)
-    {
-        // if
-    }
-}
-
-char type_desc[Y_TYPE_BUTT][30]=
-{
-    "BEGIN",
-    "Y_TYPE_Q",
-    "Y_TYPE_R",//response
-    "Y_TYPE_E", // response err
-    "Y_TYPE_PING",
-    "Y_TYPE_PING_RSP",
-    "Y_TYPE_FIND_NODE",
-    "Y_TYPE_FIND_NODE_RSP",
-    "Y_TYPE_GET_PEER",
-    "Y_TYPE_GET_PEER_RSP",
-    "Y_TYPE_ANNOUNCE_PEER",
-    "Y_TYPE_ANNOUNCE_PEER_RSP"
-};
 int main()
 {
     printf("ok dht spider\n");
@@ -1274,11 +1310,34 @@ int main()
         clear_node(&node);
         return -1;
     }
-    //init_route_table(&node);
+    init_route_table(&node);
     //worker(&node);
     // update route table by ping node in route table
 
     // receive msg from other node.
+
+    list_init(&q_mgr.rcv_q.q.node);
+    list_init(&q_mgr.snd_q.q.node);
+    pthread_mutex_init(&q_mgr.mutex, NULL);
+    pthread_cond_init(&q_mgr.cond, NULL);
+
+    pthread_mutex_init(&q_mgr.snd_q.mutex, NULL);
+    pthread_cond_init(&q_mgr.snd_q.cond, NULL);
+
+    pthread_mutex_init(&q_mgr.rcv_q.mutex, NULL);
+    pthread_cond_init(&q_mgr.rcv_q.cond, NULL);
+
+
+    pthread_t t1,t2,t3;
+
+    ret = pthread_create(&t1, NULL, timer_thread, (void*)&node);
+    printf("create timer_thread thread ret (%d)\n", ret);
+    ret = pthread_create(&t2, NULL, process_rcv_msg_thread, (void*)&node);
+    printf("create process_rcv_msg_thread ret (%d)\n", ret);
+    ret = pthread_create(&t3, NULL, net_thread, (void*)&node);
+    printf("create net_thread ret (%d)\n", ret);
+
+    pthread_join(t3, NULL);
 
     clear_node(&node);
 /*
@@ -1366,20 +1425,7 @@ int main()
     get_rsp_msg_type(&dict, &type);
     printf("get test_announce_rsp msg type : %d -> %s\n", type, type_desc[type]);
 */
-    pthread_mutex_init(&mutex, NULL);
-    pthread_t tid[2] ={0};
-    pthread_create(&tid[0], NULL, send_thread, NULL);
-    pthread_create(&tid[1], NULL, rcv_thread, NULL);
 
-
-    int i=100;
-    while(i-- > 0)
-    {
-        pthread_mutex_lock(&mutex);
-        printf(" main thread  msg\r\n");
-        pthread_mutex_unlock(&mutex);
-        Sleep(500);
-    }
 
 
 

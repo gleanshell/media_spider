@@ -3,7 +3,7 @@
 //
 
 #include <winsock.h>
-//#include <time.h>
+#include <time.h>
 #include "list.h"
 
 #include<pthread.h>
@@ -128,6 +128,14 @@ typedef struct msq_q
     pthread_mutex_t mutex;
     pthread_cond_t cond;
 }msg_q_t;
+
+typedef struct msg_q_mgr
+{
+    msg_q_t snd_q;
+    msg_q_t rcv_q;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+}msg_q_mgr_t;
 
 typedef struct msg_ctx
 {

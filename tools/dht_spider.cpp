@@ -452,7 +452,7 @@ void inet_bin_to_string(u_32 ip, char output[])
 
 void handle_ping_rsp()
 {
-
+    printf("get a ping rsp...\n");
 }
 
 int handle_find_node_rsp(ben_dict_t *dict, node_t *node)
@@ -541,13 +541,14 @@ int rcv_msg(SOCKET s, node_t*node)
     int ret = recvfrom(s,buffer,buffer_len,0,(sockaddr*)&in_add,&in_add_len);
     if (ret > 0)
     {
-        printf("rcv msg:%s\n", buffer);
+        printf("rcv msg,len(%d):%s\n",ret, buffer);
         msg_t *m = (msg_t*)malloc(sizeof(msg_t));
         m->addr = in_add;
         m->buf_len = ret;
         memcpy(m->buf, buffer, ret);
         list_add_tail(&q_mgr.rcv_q.q.node,&m->node);
         q_mgr.rcv_q.msg_cnt += 1;
+        pthread_cond_signal(&q_mgr.rcv_q.cond);
         /*
 
         u_32 pos = 0;
@@ -1153,7 +1154,7 @@ int init_route_table(node_t*node)
          {
              break;
          }*/
-         Sleep(20);
+         Sleep(200);
      }
 
     /**
@@ -1180,6 +1181,7 @@ void _send_first_msg(node_t*nod)
 */
 void *timer_thread(void*arg)
 {
+    //Sleep(5000);
     node_t *nod = (node_t*)arg;
     int i = 0;
     while(true)
@@ -1190,10 +1192,11 @@ void *timer_thread(void*arg)
         remote_addr.sin_port = htons(6881);
         remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
         //remote_addr.sin_addr.S_un.S_addr = (inet_addr("87.98.162.88"));
-        int ret = find_node(nod->recv_socket,&remote_addr,nod->node_id, nod->node_id);
-        ret = ping_node(nod->recv_socket,&remote_addr,nod->node_id);
+        //int ret = find_node(nod->recv_socket,&remote_addr,nod->node_id, nod->node_id);
+        int ret = ping_node(nod->recv_socket,&remote_addr,nod->node_id);
 
         Sleep(5000);
+
     }
 }
 
@@ -1213,15 +1216,19 @@ void *process_rcv_msg_thread(void*arg)
             pthread_cond_wait(&q_mgr.rcv_q.cond, &q_mgr.rcv_q.mutex);
         }
         memset(&dict, 0, sizeof(ben_dict_t));
-        list_head_t *first = q_mgr.snd_q.q.node.next;
+        list_head_t *first = q_mgr.rcv_q.q.node.next;
         msg_t *m = container_of(msg_t, node, first);
         u_32 pos = 0;
 
+        printf("[info] buf:{%s} buflen{%d}\n", m->buf, m->buf_len);
         ben_coding(m->buf, m->buf_len, &pos);
 
         free(m);
         m = NULL;
         list_del(first);
+        q_mgr.rcv_q.msg_cnt -= 1;
+
+        //print_result(&g_stack, &g_ctx_stack);
 
         int rsp_type = -1;
         get_rsp_msg_type(&dict, &rsp_type);
@@ -1291,7 +1298,7 @@ void* net_thread(void*arg)
         if (q_mgr.rcv_q.msg_cnt < MAX_MSG_QUEUE_SIZE)
         {
             //printf("rcv msg...\n");
-            rcv_msg(nod->send_socket, nod);
+            rcv_msg(nod->recv_socket, nod);
         }
 
         pthread_mutex_unlock(&q_mgr.rcv_q.mutex);

@@ -40,14 +40,24 @@ u_8 tid = 0;
 
 msg_q_mgr_t q_mgr;
 
-u_16 dht_ntohs(u_16 x)
+u_16 dht_ntohs(u_8* x)
 {
-    u_8 *low = (u_8*)&x;
-    u_8 *high = (low + 1);
-    u_8 tmp = *low;
-    *low = *high;
-    *high = tmp;
-    return x;
+    u_16 r = 0;
+    u_8 *tmp = (u_8*)&r;
+    tmp[0] = x[1];
+    tmp[1] = x[0];
+    return r;
+}
+
+u_32 dht_ntohl(u_8 *ip)
+{
+    u_32 r = 0;
+    u_8 *tmp = (u_8*)&r;
+    tmp[0] = ip[3];
+    tmp[1] = ip[2];
+    tmp[2] = ip[1];
+    tmp[3] = ip[0];
+    return r;
 }
 
 int tree_push(tree_stack_t *s, bucket_tree_node_t** a)
@@ -155,17 +165,28 @@ void update_bucket_update_time(bucket_t*bucket)
     bucket->update_time = t;
 }
 
-int ping_node(SOCKET s, sockaddr_in* addr, unsigned char* self_node_id)
+int ping_node(sockaddr_in* addr, unsigned char* self_node_id)
 {
     //d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe
     unsigned char ping_str_start[100] = "d1:ad2:id20:";
+    int start_str_len = strlen((char*)ping_str_start);
     unsigned char ping_str_end[100] = "e1:q4:ping1:t2:pp1:y1:qe";
+    int end_str_len = strlen((char*)ping_str_end);
     unsigned char ping_str_self_node_id[100] = "";
     memcpy(ping_str_self_node_id, self_node_id, NODE_STR_LEN);
-    strcat((char*)ping_str_start, (char*)ping_str_self_node_id);
-    strcat((char*)ping_str_start, (char*)ping_str_end);
-    sendto(s,(char *)ping_str_start, strlen((char*)ping_str_start), 0,(sockaddr*)addr, sizeof(struct sockaddr));
-    printf("send ping msg: %s\n", ping_str_start);
+    //strcat((char*)ping_str_start, (char*)ping_str_self_node_id);
+    memcpy((((char*)ping_str_start) + start_str_len), self_node_id, NODE_STR_LEN);
+    //strcat((char*)ping_str_start, (char*)ping_str_end);
+    memcpy((((char*)ping_str_start) + start_str_len + NODE_STR_LEN), ping_str_end, end_str_len);
+    //sendto(s,(char *)ping_str_start, strlen((char*)ping_str_start), 0,(sockaddr*)addr, sizeof(struct sockaddr));
+    //printf("send ping msg: %s\n", ping_str_start);
+    msg_t *m = (msg_t*)malloc(sizeof(msg_t));
+    m->addr = *addr;
+    m->buf_len = strlen("d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe");
+    memcpy(m->buf, ping_str_start, m->buf_len);
+    list_add_tail(&q_mgr.snd_q.q.node, &m->node);
+    q_mgr.snd_q.msg_cnt += 1;
+    pthread_cond_signal(&q_mgr.snd_q.cond);
     return OK;
 }
 
@@ -176,7 +197,7 @@ int query_node()
 /**
 * find node :the t value,start with f.
 */
-int find_node(SOCKET s, sockaddr_in* addr, u_8 * id, u_8 *tgt)
+int find_node(sockaddr_in* addr, u_8 * id, u_8 *tgt)
 {
     //d1:ad2:id20:abcdefghij01234567896:target20:mnopqrstuvwxyz123456e1:q9:find_node1:t2:aa1:y1:qe
     char str1[] = "d1:ad2:id20:";
@@ -210,8 +231,16 @@ int find_node(SOCKET s, sockaddr_in* addr, u_8 * id, u_8 *tgt)
 
     int send_len = strlen("d1:ad2:id20:abcdefghij01234567896:target20:mnopqrstuvwxyz123456e1:q9:find_node1:t2:aa1:y1:qe");
 
-    sendto(s,(char *)snd_str, send_len, 0,(sockaddr*)addr, sizeof(struct sockaddr));
-    printf("send find node msg(len:%d): %s\n", send_len, snd_str);
+    //sendto(s,(char *)snd_str, send_len, 0,(sockaddr*)addr, sizeof(struct sockaddr));
+    //printf("send find node msg(len:%d): %s\n", send_len, snd_str);
+    msg_t *m = (msg_t*)malloc(sizeof(msg_t));
+    m->addr = *addr;
+    m->buf_len = send_len;//strlen("d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe");
+    memcpy(m->buf, snd_str, m->buf_len);
+    list_add_tail(&q_mgr.snd_q.q.node, &m->node);
+    q_mgr.snd_q.msg_cnt += 1;
+    pthread_cond_signal(&q_mgr.snd_q.cond);
+
 
     return OK;
 }
@@ -248,7 +277,7 @@ int get_peer_rsp_r_type(ben_dict_t *dict, int *type, u_16 *t)
     {
         if (0 == strcmp(e->str, "t"))
         {
-            printf("\nget rsp t: %s\n", e->p.dict_val_ref->str);
+            //printf("\nget rsp t: %s\n", e->p.dict_val_ref->str);
             char type_str = e->p.dict_val_ref->str[0];
             switch (type_str)
             {
@@ -363,7 +392,7 @@ B±àÂë=d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re
     {
         if (0 == strcmp(e->str, "y"))
         {
-            printf("\nget rsp y: %s\n", e->p.dict_val_ref->str);
+            //printf("\nget rsp y: %s\n", e->p.dict_val_ref->str);
             char type_str = e->p.dict_val_ref->str[0];
             switch (type_str)
             {
@@ -411,7 +440,6 @@ int get_ip_in_ping_rsp(ben_dict_t *dict, u_32 *ip, u_16 *port)
 
 int get_id_in_ping_rsp(ben_dict_t *dict, u_8 *id)
 {
-    printf("\nwtf\n");
     str_ele_t *e = dict->e[0].p.dict_val_ref;
     while (NULL != e)
     {
@@ -466,7 +494,7 @@ int handle_find_node_rsp(ben_dict_t *dict, node_t *node)
     {
         if (0 == strcmp(e->str, "r"))
         {
-            printf("\nget find node rsp r: %s\n", e->p.dict_val_ref->str);
+            //printf("\nget find node rsp r: %s\n", e->p.dict_val_ref->str);
             str_ele_t *e1 = e->p.dict_val_ref->p.dict_val_ref;
             while (NULL != e1)
             {
@@ -506,14 +534,14 @@ int handle_find_node_rsp(ben_dict_t *dict, node_t *node)
 
     u_8 * temp =(u_8*)nodes_str;
     int ret = -1;
-    for (int j = 0; j < node_num ; ++j )
+    /*for (int j = 0; j < node_num ; ++j )
     {
         for(int k=0;k< 26; ++k)
         {
             printf("%hhu.", *(temp+j*26+k) );
         }
         printf("\n");
-    }
+    }*/
     for (int i= 0; i < node_num; ++i)
     {
         u_8 *node_str = temp;
@@ -539,9 +567,12 @@ int rcv_msg(SOCKET s, node_t*node)
     int buffer_len = 500;
     char buffer[500] = {0};
     int ret = recvfrom(s,buffer,buffer_len,0,(sockaddr*)&in_add,&in_add_len);
+    u_32 frm_ip = (in_add.sin_addr.S_un.S_addr);
+    char out[20] ={0};
+    inet_bin_to_string(frm_ip, out);
     if (ret > 0)
     {
-        printf("rcv msg,len(%d):%s\n",ret, buffer);
+        printf("rcv msg frm-----(%s)---------,len(%d):%s\n",out, ret, buffer);
         msg_t *m = (msg_t*)malloc(sizeof(msg_t));
         m->addr = in_add;
         m->buf_len = ret;
@@ -959,7 +990,7 @@ int insert_into_bucket_tree(node_t *node, bucket_tree_node_t **bkt_tree,u_8 *nod
     }
 
     ret = insert_into_bkt(node, the_node, dst, node_ip, node_port, self_node_id);
-    printf("----insert ip : %hhu.%hhu.%hhu.%hhu, port: %hu\n", node_ip[0],node_ip[1],node_ip[2],node_ip[3], *node_port);
+    //printf("----insert ip : %hhu.%hhu.%hhu.%hhu, port: %hu\n", node_ip[0],node_ip[1],node_ip[2],node_ip[3], *node_port);
     if (-1 == ret)
     {
         printf("Insert into bkt failed\n");
@@ -1136,11 +1167,11 @@ int init_route_table(node_t*node)
     remote_addr.sin_family = AF_INET;
     remote_addr.sin_port = htons(6881);
     //remote_addr.sin_port = htons(49246);
-    remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
-    //remote_addr.sin_addr.S_un.S_addr = (inet_addr("87.98.162.88"));
-    //ret = find_node(node->recv_socket,&remote_addr,node->node_id, node->node_id);
-    ret = ping_node(node->recv_socket,&remote_addr,node->node_id);
-     int try_times = 200;
+    //remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
+    remote_addr.sin_addr.S_un.S_addr = (inet_addr("87.98.162.88"));
+    //ret = find_node(&remote_addr,node->node_id, node->node_id);
+    //ret = ping_node(&remote_addr,node->node_id);
+     int try_times = 0;
      while (try_times -- > 0)
      {
          printf("rcv msg times %d:\n", try_times);
@@ -1172,10 +1203,132 @@ void _send_first_msg(node_t*nod)
     sendto(nod->recv_socket,(char *)m->buf, m->buf_len, 0,(sockaddr*)&m->addr, sizeof(struct sockaddr));
 
     list_del(first);
+
+    q_mgr.snd_q.msg_cnt -= 1;
+    char out[21] ={0};
+    inet_bin_to_string(m->addr.sin_addr.S_un.S_addr, out);
+    printf("send one msg to ==============(%s)=====, snd q len (%d)\n",out, q_mgr.snd_q.msg_cnt);
+
     free(m);
     m = NULL;
 }
 
+/**
+*
+*/
+int tree_node_to_buffer(node_t *node, u_8 *buffer)
+{
+    if (NULL == buffer)
+    {
+        printf("malloc buf err\n");
+        return -1;
+    }
+    u_8*buf = buffer;
+
+    tree_stack_t t_stack;
+    tree_stack_t *t=&t_stack;
+    init_tree_stack(t);
+
+    bucket_tree_node_t *root = node->bkt_tree;
+    printf("root is null? ? %d\n", root ==NULL);
+    if (NULL == root)
+    {
+        return -1;
+    }
+
+    tree_push(t, &root);
+
+    while(!tree_stack_is_empty(t))
+    {
+        bucket_tree_node_t *tmp = NULL;
+        tree_pop(t, &tmp);
+        if (is_node_leaf(tmp))
+        {
+            for (int i = 0; i < BUCKET_SIZE; ++i)
+            {
+                if (tmp->peer_nodes[i].status == IN_USE)
+                {
+                    memcpy(buf, tmp->peer_nodes[i].node_str, NODE_STR_LEN);;
+                    buf += NODE_STR_LEN;
+                    memcpy(buf, tmp->peer_nodes[i].node_ip, NODE_STR_IP_LEN);
+                    buf += NODE_STR_IP_LEN;
+                    memcpy(buf, tmp->peer_nodes[i].node_port, NODE_STR_PORT_LEN);
+                    buf += NODE_STR_PORT_LEN;
+                    //char _ip_out [20] = {0};
+                    //inet_bin_to_string(tmp->peer_nodes[i].node_ip, _ip_out);
+                    u_16 _port = *(u_16*)(tmp->peer_nodes[i].node_port);
+                    //_port = dht_ntohs(tmp->peer_nodes[i].node_port);
+                    u_8 *_ip = tmp->peer_nodes[i].node_ip;
+                    printf("buffer ip: %hhu.%hhu.%hhu.%hhu, port :%hu\n ",_ip[0], _ip[1], _ip[2], _ip[3] , _port);
+                }
+            }
+        }
+        else
+        {
+            tree_push(t, &tmp->l);
+            tree_push(t, &tmp->r);
+        }
+    }
+
+    return 0;
+}
+
+void refresh_route(node_t *node, int type)
+{
+    int route_num = node->route_num;
+    u_8 *buffer = (u_8*)malloc((NODE_STR_LEN + NODE_STR_IP_LEN + NODE_STR_PORT_LEN) * route_num);
+    if (NULL == buffer)
+    {
+        printf("malloc buf err\n");
+        return ;
+    }
+    int ret = tree_node_to_buffer(node, buffer);
+    printf("cur route num: %d\n", route_num);
+
+    sockaddr_in remote_addr;
+    remote_addr.sin_family = AF_INET;
+    remote_addr.sin_port = htons(6881);
+    remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
+
+
+    u_8 *tmp = buffer;
+    for (int i = 0; i < route_num; ++i)
+    {
+        tmp += NODE_STR_LEN;
+        u_32* ip =(u_32*)(tmp);
+        remote_addr.sin_addr.S_un.S_addr = *ip;
+        tmp += NODE_STR_IP_LEN;
+        u_16 * port = (u_16*)(tmp);
+        remote_addr.sin_port = *port;
+
+        if (type == Y_TYPE_PING)
+        {
+            ret = ping_node(&remote_addr, node->node_id);
+        }
+        else if(type == Y_TYPE_FIND_NODE)
+        {
+            ret = find_node(&remote_addr,node->node_id, node->node_id);
+        }
+        tmp += NODE_STR_PORT_LEN;
+
+    }
+
+    free(buffer);
+    buffer = NULL;
+}
+
+void find_neighbor(node_t*node)
+{
+    if (node->route_num == 0)
+    {
+        sockaddr_in remote_addr;
+        remote_addr.sin_family = AF_INET;
+        remote_addr.sin_port = htons(6881);
+        remote_addr.sin_addr.S_un.S_addr = (inet_addr("87.98.162.88"));
+        find_node(&remote_addr,node->node_id, node->node_id);
+    }
+    refresh_route(node, Y_TYPE_FIND_NODE);
+}
 /**
 * timer for refresh route table
 */
@@ -1189,13 +1342,23 @@ void *timer_thread(void*arg)
         printf("re-init (%d) time\n", ++i);
         sockaddr_in remote_addr;
         remote_addr.sin_family = AF_INET;
-        remote_addr.sin_port = htons(6881);
-        remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
-        //remote_addr.sin_addr.S_un.S_addr = (inet_addr("87.98.162.88"));
+        u_16 x_port ;
+        u_8* x_low = (u_8*)&x_port;
+        *x_low = 0x1a;
+        *(x_low+1) = 0xe1;
+        remote_addr.sin_port = x_port;//htons(6881);
+        //remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
+        u_32 _ip ;
+        u_8 *y_ip = (u_8*)&_ip;
+        *y_ip = 87;
+        *(y_ip+1) = 98;
+        *(y_ip+2) = 162;
+        *(y_ip+3) = 88;
+        remote_addr.sin_addr.S_un.S_addr = _ip;// (inet_addr("87.98.162.88"));
         //int ret = find_node(nod->recv_socket,&remote_addr,nod->node_id, nod->node_id);
-        int ret = ping_node(nod->recv_socket,&remote_addr,nod->node_id);
-
-        Sleep(5000);
+        //int ret = ping_node(&remote_addr,nod->node_id);
+        find_neighbor(nod);
+        Sleep(50000);
 
     }
 }
@@ -1299,6 +1462,7 @@ void* net_thread(void*arg)
         {
             //printf("rcv msg...\n");
             rcv_msg(nod->recv_socket, nod);
+            Sleep(50);
         }
 
         pthread_mutex_unlock(&q_mgr.rcv_q.mutex);
@@ -1345,6 +1509,20 @@ int main()
     printf("create net_thread ret (%d)\n", ret);
 
     pthread_join(t3, NULL);
+    u_long tip = inet_addr("0.0.0.1");
+    printf("inet addr (%u)\n", tip);
+    u_8 *z = (u_8*)&tip;
+    printf("low->high: (%hu.%hu.%hu.%hu)\n", *z, *(z+1),*(z+2), *(z+3));
+
+    u_8 zz[]={1,2,3,4};
+    tip = dht_ntohl(zz);
+    z = (u_8*)&tip;
+    printf("low->high: (%hu.%hu.%hu.%hu)\n", *z, *(z+1),*(z+2), *(z+3));
+
+    u_8 zzz[]={4,5};
+    tip = dht_ntohs(zzz);
+    z = (u_8*)&tip;
+    printf("low->high: (%hu.%hu)\n", *z, *(z+1));
 
     clear_node(&node);
 /*

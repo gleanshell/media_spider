@@ -5,6 +5,7 @@
 #include <cstdio>
 #include "dht_spider.h"
 #include "bt_parser.h"
+#include <stdarg.h>
 
 
 extern stack_t g_stack;
@@ -19,6 +20,33 @@ extern void print_result(stack_t *s, contex_stack_t *c);
 
 int insert_into_bucket_tree(node_t *node, bucket_tree_node_t **root,u_8 *node_str, u_8 *node_ip, u_8 *node_port, u_8 *self_node_id);
 int save_route_tbl_to_file(node_t* node);
+
+pthread_spinlock_t spin_lock;
+void dht_print(const char* fmt, ...)
+{
+    pthread_spin_lock(&spin_lock);
+    va_list ap;
+    va_start(ap,fmt);
+
+    char *s=va_arg(ap,char*);
+    char *s1=va_arg(ap,char*);
+    char *s2=va_arg(ap,char*);
+    char *s3=va_arg(ap,char*);
+    printf(fmt,s, s1,s2);
+    va_end(ap);
+    pthread_spin_unlock(&spin_lock);
+}
+
+void print_node_str(u_8 *str, int len)
+{
+    pthread_spin_lock(&spin_lock);
+    for(int i = 0; i < len; ++i)
+    {
+        printf("%hhu|", str[i]);
+    }
+    printf("\n");
+     pthread_spin_unlock(&spin_lock);
+}
 
 char type_desc[Y_TYPE_BUTT][30]=
 {
@@ -179,7 +207,7 @@ int ping_node(sockaddr_in* addr, unsigned char* self_node_id)
     //strcat((char*)ping_str_start, (char*)ping_str_end);
     memcpy((((char*)ping_str_start) + start_str_len + NODE_STR_LEN), ping_str_end, end_str_len);
     //sendto(s,(char *)ping_str_start, strlen((char*)ping_str_start), 0,(sockaddr*)addr, sizeof(struct sockaddr));
-    //printf("send ping msg: %s\n", ping_str_start);
+    //dht_print("send ping msg: %s\n", ping_str_start);
     msg_t *m = (msg_t*)malloc(sizeof(msg_t));
     m->addr = *addr;
     m->buf_len = strlen("d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe");
@@ -232,7 +260,7 @@ int find_node(sockaddr_in* addr, u_8 * id, u_8 *tgt)
     int send_len = strlen("d1:ad2:id20:abcdefghij01234567896:target20:mnopqrstuvwxyz123456e1:q9:find_node1:t2:aa1:y1:qe");
 
     //sendto(s,(char *)snd_str, send_len, 0,(sockaddr*)addr, sizeof(struct sockaddr));
-    //printf("send find node msg(len:%d): %s\n", send_len, snd_str);
+    //dht_print("send find node msg(len:%d): %s\n", send_len, snd_str);
     msg_t *m = (msg_t*)malloc(sizeof(msg_t));
     m->addr = *addr;
     m->buf_len = send_len;//strlen("d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe");
@@ -277,7 +305,7 @@ int get_peer_rsp_r_type(ben_dict_t *dict, int *type, u_16 *t)
     {
         if (0 == strcmp(e->str, "t"))
         {
-            //printf("\nget rsp t: %s\n", e->p.dict_val_ref->str);
+            //dht_print("\nget rsp t: %s\n", e->p.dict_val_ref->str);
             char type_str = e->p.dict_val_ref->str[0];
             switch (type_str)
             {
@@ -314,7 +342,7 @@ int get_peer_req_q_type(ben_dict_t *dict, int *type)
     {
         if (0 == strcmp(e->str, "q"))
         {
-            printf("\nget rsp q: %s\n", e->p.dict_val_ref->str);
+            dht_print("\nget rsp q: %s\n", e->p.dict_val_ref->str);
             char type_str = e->p.dict_val_ref->str[0];
             switch (type_str)
             {
@@ -392,7 +420,7 @@ B±àÂë=d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re
     {
         if (0 == strcmp(e->str, "y"))
         {
-            //printf("\nget rsp y: %s\n", e->p.dict_val_ref->str);
+            //dht_print("\nget rsp y: %s\n", e->p.dict_val_ref->str);
             char type_str = e->p.dict_val_ref->str[0];
             switch (type_str)
             {
@@ -414,7 +442,7 @@ B±àÂë=d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re
         }
         e = e->p.list_next_ref;
     }
-    printf("\n not find y value!\n");
+    dht_print("\n not find y value!\n");
     return -1;
 
 
@@ -427,14 +455,14 @@ int get_ip_in_ping_rsp(ben_dict_t *dict, u_32 *ip, u_16 *port)
     {
         if (0 == strcmp(e->str, "ip"))
         {
-            printf("\nget ping rsp ip: %s\n", e->p.dict_val_ref->str);
+            dht_print("\nget ping rsp ip: %s\n", e->p.dict_val_ref->str);
             memcpy(ip, e->p.dict_val_ref->str, sizeof(u_32));
             memcpy(port,e->p.dict_val_ref->str + sizeof(u_32), sizeof(u_16));
             return 0;
         }
         e = e->p.list_next_ref;
     }
-    printf("\n not find ip value!\n");
+    dht_print("\n not find ip value!\n");
     return -1;
 }
 
@@ -445,13 +473,13 @@ int get_id_in_ping_rsp(ben_dict_t *dict, u_8 *id)
     {
         if (0 == strcmp(e->str, "r"))
         {
-            printf("\nget ping rsp r: %s\n", e->p.dict_val_ref->str);
+            dht_print("\nget ping rsp r: %s\n", e->p.dict_val_ref->str);
             str_ele_t *e1 = e->p.dict_val_ref->p.dict_val_ref;
             while (NULL != e1)
             {
                 if (0 == strcmp(e1->str, "id"))
                 {
-                    printf("\nget ping rsp id of r: %s\n", e1->p.dict_val_ref->str);
+                    dht_print("\nget ping rsp id of r: %s\n", e1->p.dict_val_ref->str);
                     memcpy(id, e1->p.dict_val_ref->str, 20*sizeof(u_8));
                     return 0;
                 }
@@ -460,7 +488,7 @@ int get_id_in_ping_rsp(ben_dict_t *dict, u_8 *id)
         }
         e = e->p.list_next_ref;
     }
-    printf("\n not find id value!\n");
+    dht_print("\n not find id value!\n");
     return -1;
 }
 
@@ -480,7 +508,7 @@ void inet_bin_to_string(u_32 ip, char output[])
 
 void handle_ping_rsp()
 {
-    printf("get a ping rsp...\n");
+    dht_print("get a ping rsp...\n");
 }
 
 int handle_find_node_rsp(ben_dict_t *dict, node_t *node)
@@ -494,19 +522,28 @@ int handle_find_node_rsp(ben_dict_t *dict, node_t *node)
     {
         if (0 == strcmp(e->str, "r"))
         {
-            //printf("\nget find node rsp r: %s\n", e->p.dict_val_ref->str);
+            //dht_print("\nget find node rsp r: %s\n", e->p.dict_val_ref->str);
             str_ele_t *e1 = e->p.dict_val_ref->p.dict_val_ref;
             while (NULL != e1)
             {
+                //dht_print("\nget find node rsp id of r: %s\n", e1->str);
                 if (0 == strcmp(e1->str, "id"))
                 {
-                    printf("\nget find node rsp id of r: %s\n", e1->p.dict_val_ref->str);
+                    dht_print("\nget find node rsp id of r: %s\n", e1->p.dict_val_ref->str);
                     memcpy(id, e1->p.dict_val_ref->str, 20*sizeof(u_8));
                 }
                 if (0 == strcmp(e1->str, "nodes"))
                 {
+                    if (NULL == e1->p.dict_val_ref)
+                    {
+                        return -1;
+                    }
                     nodes_str_len = e1->p.dict_val_ref->str_len;
-                    printf("\nget ping rsp nodes of r(len:%d): %s\n", nodes_str_len, e1->p.dict_val_ref->str);
+                    if (0 == nodes_str_len || NULL == e1->p.dict_val_ref->str)
+                    {
+                        return -1;
+                    }
+                    dht_print("\nget ping rsp nodes of r(len:%d): %s\n", nodes_str_len, e1->p.dict_val_ref->str);
                     memcpy(nodes_str, e1->p.dict_val_ref->str, nodes_str_len*sizeof(u_8));
                     //return 0;
                     find_node_str = true;
@@ -520,29 +557,30 @@ int handle_find_node_rsp(ben_dict_t *dict, node_t *node)
     }
     if (false == find_node_str)
     {
-       printf("\n not find key r !\n");
+       dht_print("\n not find key r !\n");
         return -1;
     }
     int node_ip_port_len = (NODE_STR_LEN + NODE_STR_IP_LEN + NODE_STR_PORT_LEN);
     int node_num = nodes_str_len / node_ip_port_len;
-    printf("nodes_len (%d), num (%d)\n", nodes_str_len, node_num);
+    dht_print("nodes_len (%d), num (%d)\n", nodes_str_len, node_num);
     if (node_num *node_ip_port_len != nodes_str_len )
     {
-        printf("nodes string is not compelete..\n");
+        dht_print("nodes string is not compelete..\n");
         return -1;
     }
 
     u_8 * temp =(u_8*)nodes_str;
     int ret = -1;
-    /*for (int j = 0; j < node_num ; ++j )
+    for (int j = 0; j < node_num ; ++j )
     {
         for(int k=0;k< 26; ++k)
         {
-            printf("%hhu.", *(temp+j*26+k) );
+            dht_print("%hhu.", *(temp+j*26+k) );
         }
-        printf("\n");
-    }*/
-    for (int i= 0; i < node_num; ++i)
+        dht_print("\n");
+    }
+    int i;
+    for (i= 0; i < node_num; ++i)
     {
         u_8 *node_str = temp;
         u_8 *node_ip = temp + NODE_STR_LEN;
@@ -555,7 +593,7 @@ int handle_find_node_rsp(ben_dict_t *dict, node_t *node)
 
         temp += (NODE_STR_LEN+ NODE_STR_IP_LEN + NODE_STR_PORT_LEN);
     }
-    printf("insert one record to memory!\n now save to file\n");
+    dht_print("insert (%d) record to memory!\n now save to file\n", i);
     save_route_tbl_to_file(node);
     return 0;
 
@@ -572,7 +610,7 @@ int rcv_msg(SOCKET s, node_t*node)
     inet_bin_to_string(frm_ip, out);
     if (ret > 0)
     {
-        printf("rcv msg frm-----(%s)---------,len(%d):%s\n",out, ret, buffer);
+        dht_print("rcv msg frm-----(%s)---------,len(%d).\n",out, ret);
         msg_t *m = (msg_t*)malloc(sizeof(msg_t));
         m->addr = in_add;
         m->buf_len = ret;
@@ -590,7 +628,7 @@ int rcv_msg(SOCKET s, node_t*node)
         get_rsp_msg_type(&dict, &rsp_type);
         if (-1 == rsp_type)
         {
-            printf("get rsp type failed.\n");
+            dht_print("get rsp type failed.\n");
             return OK;
         }
         switch(rsp_type)
@@ -630,11 +668,11 @@ int random_node_id(unsigned char *node_id)
     time_t t ;
     time(&t);
     char time_str[100] = {0};
-    printf("now:%u\n", t);
+    dht_print("now:%u\n", t);
     sprintf(time_str,"%u", t);
     u_32 _hash [5] = {0};
     sha_1((u_char*)time_str,strlen(time_str), _hash);
-    printf("random self id hash:");
+    dht_print("random self id hash:");
     print_hex((u_char*)_hash,20);
     //memcpy(node_id, "abcdefghij0123456780", NODE_STR_LEN);
     memcpy(node_id, _hash, NODE_STR_LEN);
@@ -652,7 +690,7 @@ int init_wsa()
     WSADATA wsadata ;
     if (WSAStartup(sock_ver,&wsadata))
     {
-        printf("err no:%d\n",errno);
+        dht_print("err no:%d\n",errno);
         return -1;
     }
     return 0;
@@ -664,14 +702,14 @@ int init_rcv_socket(node_t *node)
     node->recv_socket = socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP);
     if (INVALID_SOCKET == node->recv_socket)
     {
-        printf("new socket err");
+        dht_print("new socket err");
         return -1;
     }
     u_long mode = 1;//set none-block socket
     int r_ctl = ioctlsocket(node->recv_socket,FIONBIO,&mode);
     if (r_ctl != 0)
     {
-        printf("ioctl err:%d\n", r_ctl);
+        dht_print("ioctl err:%d\n", r_ctl);
         closesocket(node->recv_socket);
         return -1;
     }
@@ -683,7 +721,7 @@ int init_rcv_socket(node_t *node)
     int ret = bind(node->recv_socket,(struct sockaddr*)&local_addr, sizeof(struct sockaddr));
     if (0 != ret)
     {
-        printf("bind err:%d\n", ret);
+        dht_print("bind err:%d\n", ret);
         closesocket(node->recv_socket);
         return -1;
     }
@@ -697,7 +735,7 @@ int init_send_socket(node_t *node)
     node->send_socket = socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP);
     if (INVALID_SOCKET == node->send_socket)
     {
-        printf("new socket err");
+        dht_print("new socket err");
         closesocket(node->send_socket);
         return -1;
     }
@@ -706,7 +744,7 @@ int init_send_socket(node_t *node)
     int r_ctl = ioctlsocket(node->send_socket,FIONBIO,&mode);
     if (r_ctl != 0)
     {
-        printf("ioctl err2:%d\n", r_ctl);
+        dht_print("ioctl err2:%d\n", r_ctl);
         closesocket(node->send_socket);
         return -1;
     }
@@ -751,6 +789,10 @@ void convert_node_str(u_8 *src, u_8 * dst)
 
 bool is_node_leaf(bucket_tree_node_t*bkt_tree)
 {
+    if (bkt_tree == NULL)
+    {
+        dht_print("what the fuck!?\n");
+    }
     return (NULL == bkt_tree->l && NULL == bkt_tree->r);
 }
 
@@ -789,8 +831,8 @@ void generate_str_by_bit(int bits, u_8 *out_str)
         memcpy(out_str, tmp_char, NODE_STR_LEN + 1);
         return;
     }
-    int idx = bits / sizeof(u_8);
-    int rest = bits % sizeof(u_8);
+    int idx = bits / 8;
+    int rest = bits % 8;
     tmp_char[NODE_STR_LEN - idx] |= (u_8)(1U << (rest) );
     memcpy(out_str, tmp_char, NODE_STR_LEN + 1);
 }
@@ -820,6 +862,7 @@ void generate_middle_str(u_8 *ret, u_8 *start_str, u_8 *end_str)
 {
     u_8 _add[NODE_STR_LEN + 1] ={0};
     big_bit_add(start_str, end_str, _add);
+    print_node_str(_add, NODE_STR_LEN +1);
     big_bit_half(_add, ret);
 }
 /**
@@ -838,20 +881,28 @@ int insert_into_bkt(node_t *node, bucket_tree_node_t *bkt_tree, u_8 *node_str, u
         {
             if (bkt_tree->peer_nodes[i].status == NOT_USE)
             {
-                printf("[ERROR] should'nt happen \n");
+                dht_print("[ERROR] should'nt happen \n");
                 bkt_tree->peer_nodes[i].status = IN_USE;
             }
+            dht_print("@@@@@@@@@@@@@@@@@@@@@@ same node: %d\n", node->route_num);
+
+            print_node_str(t, NODE_STR_LEN +1);
+            print_node_str(node_str, NODE_STR_LEN +1);
+
+
             return 0 ;
         }
         if (bkt_tree->peer_nodes[i].status == NOT_USE && -1 == first_empty_slot )
         {
             first_empty_slot = i;
+            break;
         }
-        if (0 == cmp_node_str(self_node_id, bkt_tree->peer_nodes[i].node_str))
+
+        /*if (0 == cmp_node_str(self_node_id, bkt_tree->peer_nodes[i].node_str))
         {
             include_self = true;
-            printf("[debug] include self true\n");
-        }
+            dht_print("[debug] include self true\n");
+        }*/
     }
 
     if (-1 != first_empty_slot )
@@ -864,14 +915,26 @@ int insert_into_bkt(node_t *node, bucket_tree_node_t *bkt_tree, u_8 *node_str, u
         time(&t);
         bkt_tree->peer_nodes[first_empty_slot].update_time = t;
         node->route_num += 1;
-        printf("[debug] insert one to NOT_USE slot\n");
+        //dht_print("[debug] insert one to NOT_USE slot(%d)\n", first_empty_slot);
+        print_node_str(node_str, NODE_STR_LEN+1);
         return 0;
     }
-    if (false == include_self)
+
+    u_8 _self_id[NODE_STR_LEN+1] = {0};
+    convert_node_str(self_node_id, _self_id);
+
+    if (!(cmp_node_str(bkt_tree->range_start_str, _self_id) <= 0 && cmp_node_str(bkt_tree->range_end_str, _self_id) > 0))
     {
+        //print_node_str(_self_id, NODE_STR_LEN+1);
+        //dht_print("okkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\n");
+        //print_node_str(bkt_tree->range_start_str, NODE_STR_LEN+1);
+        //print_node_str(_self_id, NODE_STR_LEN+1);
+        //print_node_str(bkt_tree->range_end_str, NODE_STR_LEN+1);
+        //dht_print("opppppppppppppppppppppppppppppppppppppppp\n");
         return 0;
     }
     // bkt should split into two bucket
+    dht_print("ssssssssssssplit~~~~\n");
     bkt_tree->l = (bucket_tree_node_t*)malloc(sizeof(bucket_tree_node_t));
     bkt_tree->r = (bucket_tree_node_t*)malloc(sizeof(bucket_tree_node_t));
     if (NULL == bkt_tree || NULL == bkt_tree)
@@ -880,21 +943,28 @@ int insert_into_bkt(node_t *node, bucket_tree_node_t *bkt_tree, u_8 *node_str, u
         free(bkt_tree->r);
         bkt_tree->l = NULL;
         bkt_tree->r = NULL;
-        printf("[debug] mem alloc err\n");
+        dht_print("[debug] mem alloc err\n");
         return -1;
     }
+    memset(bkt_tree->l, 0, sizeof(bucket_tree_node_t));
+    memset(bkt_tree->r, 0, sizeof(bucket_tree_node_t));
     //old bkt start = end
     u_8 tmp_middle_str[NODE_STR_LEN +1] ={0};
-    generate_middle_str(tmp_middle_str, bkt_tree->range_start_str, bkt_tree->range_end_str);
+    dht_print("middddddddddddd~~~~\n");
 
-    memcpy(bkt_tree->range_start_str, tmp_middle_str, NODE_STR_LEN+1);
-    memcpy(bkt_tree->range_end_str, tmp_middle_str, NODE_STR_LEN+1);
+    generate_middle_str(tmp_middle_str, bkt_tree->range_start_str, bkt_tree->range_end_str);
+    print_node_str(tmp_middle_str, NODE_STR_LEN+1);
+     dht_print("miiiiiiiiiiiiiiiiiiiii~~~~\n");
+
 
     memcpy(bkt_tree->l->range_start_str, bkt_tree->range_start_str, NODE_STR_LEN +1);
     memcpy(bkt_tree->l->range_end_str, tmp_middle_str, NODE_STR_LEN +1);
 
     memcpy(bkt_tree->r->range_start_str, tmp_middle_str, NODE_STR_LEN+1);
     memcpy(bkt_tree->r->range_end_str, bkt_tree->range_end_str, NODE_STR_LEN+1);
+
+    memcpy(bkt_tree->range_start_str, tmp_middle_str, NODE_STR_LEN+1);
+    memcpy(bkt_tree->range_end_str, tmp_middle_str, NODE_STR_LEN+1);
 
     int ll = 0;
     int rr = 0;
@@ -905,11 +975,12 @@ int insert_into_bkt(node_t *node, bucket_tree_node_t *bkt_tree, u_8 *node_str, u
         if (1 == cmp_node_str(tmp_middle_str, t))
         {
             memcpy(&bkt_tree->l->peer_nodes[ll++], &bkt_tree->peer_nodes[j], sizeof(peer_info_t));
-            printf("[debug] re-insert one to NOT_USE slot\n");
+            dht_print("[debug] re-insert one to NOT_USE slot LEFT %d,%d \n", bkt_tree->l->l == NULL, bkt_tree->l->r == NULL);
         }
         else
         {
             memcpy(&bkt_tree->r->peer_nodes[rr++], &bkt_tree->peer_nodes[j], sizeof(peer_info_t));
+            dht_print("[debug] re-insert one to NOT_USE slot RIGHT %d,%d !\n", bkt_tree->r->l == NULL, bkt_tree->r->r == NULL);
         }
     }
     //insert cur new node_str
@@ -922,6 +993,7 @@ int insert_into_bkt(node_t *node, bucket_tree_node_t *bkt_tree, u_8 *node_str, u
         time_t t ;
         time(&t);
         bkt_tree->r->peer_nodes[ll].update_time = t;
+        dht_print("[debug] re-insert one to NOT_USE slot LEFT NEW %d,%d !\n", bkt_tree->l->l == NULL, bkt_tree->l->r == NULL);
     }
     else
     {
@@ -932,8 +1004,10 @@ int insert_into_bkt(node_t *node, bucket_tree_node_t *bkt_tree, u_8 *node_str, u
         time_t t ;
         time(&t);
         bkt_tree->r->peer_nodes[rr].update_time = t;
+        dht_print("[debug] re-insert one to NOT_USE slot RIGHT NEW %d,%d !\n", bkt_tree->r->l == NULL, bkt_tree->r->r == NULL);
     }
     node->route_num += 1;
+    //dht_print("init okkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\n");
     return 0;
 
 }
@@ -949,7 +1023,7 @@ int insert_into_bucket_tree(node_t *node, bucket_tree_node_t **bkt_tree,u_8 *nod
         *bkt_tree = (bucket_tree_node_t*)malloc(sizeof(bucket_tree_node_t));
         if (NULL == *bkt_tree)
         {
-            printf("malloc err\n");
+            dht_print("malloc err\n");
             return -1;
         }
         memset((*bkt_tree), 0, sizeof(bucket_tree_node_t));
@@ -964,16 +1038,23 @@ int insert_into_bucket_tree(node_t *node, bucket_tree_node_t **bkt_tree,u_8 *nod
         u_8 start_str[NODE_STR_LEN +1 ] = {0};
         generate_str_by_bit(0, start_str);
         memcpy((*bkt_tree)->range_start_str, start_str, NODE_STR_LEN +1 );
+        //print_node_str(start_str, NODE_STR_LEN+1);
 
         u_8 end_str[NODE_STR_LEN +1 ] = {0};
         generate_str_by_bit(160, end_str);
+        //print_node_str(end_str, NODE_STR_LEN+1);
         memcpy((*bkt_tree)->range_end_str, end_str, NODE_STR_LEN +1 );
 
         (*bkt_tree)->l = NULL;
         (*bkt_tree)->r = NULL;
         node->route_num += 1;
 
-        printf("[debug] insert one to mem.\n");
+        //dht_print("[debug] insert one to mem.\n");
+
+        u_8 dst1[NODE_STR_LEN+1] = {0};
+        convert_node_str(node_str, dst1);
+
+        //print_node_str(dst1, NODE_STR_LEN+1);
 
         return 0;
 
@@ -985,15 +1066,15 @@ int insert_into_bucket_tree(node_t *node, bucket_tree_node_t **bkt_tree,u_8 *nod
     int ret = find_prop_node(*bkt_tree, &the_node, dst);
     if (-1 == ret)
     {
-        printf("Not find !! must be err\n");
+        dht_print("Not find !! must be err\n");
         return -1;
     }
 
     ret = insert_into_bkt(node, the_node, dst, node_ip, node_port, self_node_id);
-    //printf("----insert ip : %hhu.%hhu.%hhu.%hhu, port: %hu\n", node_ip[0],node_ip[1],node_ip[2],node_ip[3], *node_port);
+    //dht_print("----insert ip : %hhu.%hhu.%hhu.%hhu, port: %hu\n", node_ip[0],node_ip[1],node_ip[2],node_ip[3], *node_port);
     if (-1 == ret)
     {
-        printf("Insert into bkt failed\n");
+        dht_print("Insert into bkt failed\n");
         return -1;
     }
 
@@ -1006,7 +1087,7 @@ int save_route_tbl_to_file(node_t* node)
     fp = fopen("dht_route_s.dat", "wb+");
     if (NULL == fp)
     {
-        printf("open write file failed\n");
+        dht_print("open write file failed\n");
         return -1;
     }
 
@@ -1015,7 +1096,7 @@ int save_route_tbl_to_file(node_t* node)
     init_tree_stack(t);
 
     bucket_tree_node_t *root = node->bkt_tree;
-    printf("root is null ? %d\n", root ==NULL);
+    dht_print("root is null ? %d\n", root ==NULL);
 
     fwrite(node->node_id, 1, NODE_STR_LEN, fp);
     fwrite(&node->route_num, 1, sizeof(int),fp);
@@ -1037,9 +1118,14 @@ int save_route_tbl_to_file(node_t* node)
                     fwrite(tmp->peer_nodes[i].node_port, 1, NODE_STR_PORT_LEN , fp);
                     //char _ip_out [20] = {0};
                     //inet_bin_to_string(tmp->peer_nodes[i].node_ip, _ip_out);
-                    u_16 _port = *(u_16*)(&tmp->peer_nodes[i].node_port);
-                    u_8 *_ip = tmp->peer_nodes[i].node_ip;
-                    printf("write ip: %hhu.%hhu.%hhu.%hhu, port :%hu\n ",_ip[0], _ip[1], _ip[2], _ip[3] , _port);
+                    u_16 _port = *(u_16*)(tmp->peer_nodes[i].node_port);
+                    u_16 _port1 = dht_ntohs(tmp->peer_nodes[i].node_port);
+                    //u_8 *_ip = tmp->peer_nodes[i].node_ip;
+                    u_32 _ip = *(u_32*)tmp->peer_nodes[i].node_ip;
+                    //dht_print("write ip: %hhu.%hhu.%hhu.%hhu, port :%hu, %hu\n ",_ip[0], _ip[1], _ip[2], _ip[3] , _port1, _port);
+                    char out[20]={0};
+                    inet_bin_to_string(_ip, out);
+                    dht_print("write ip: %s, %hu \n", out, _port1);
                 }
             }
         }
@@ -1062,14 +1148,14 @@ int read_route_tbl_frm_config(node_t *node)
     fp = fopen("dht_route_s.dat", "rb");
     if (NULL == fp)
     {
-        printf("open read file failed\n");
+        dht_print("open read file failed\n");
         return -1;
     }
     fseek(fp, 0, SEEK_END);
     long file_size = ftell(fp);
     if (0 == file_size)
     {
-        printf("file is empty!\n");
+        dht_print("file is empty!\n");
         fclose(fp);
         return 0;
     }
@@ -1079,7 +1165,7 @@ int read_route_tbl_frm_config(node_t *node)
     size_t read_len = fread(node->node_id, 1, NODE_STR_LEN, fp);
     if (read_len != NODE_STR_LEN)
     {
-        printf("read self node id err(%d)\n", read_len);
+        dht_print("read self node id err(%d)\n", read_len);
         fclose(fp);
         return -1;
     }
@@ -1089,12 +1175,12 @@ int read_route_tbl_frm_config(node_t *node)
     read_len = fread(&route_num,  1, sizeof(int), fp);
     if (read_len != sizeof(int))
     {
-        printf("read route num err(%u)\n", read_len);
+        dht_print("read route num err(%u)\n", read_len);
         fclose(fp);
         return -1;
     }
 
-    printf("read route num : %d\n", route_num);
+    dht_print("read route num : %d\n", route_num);
     //node->route_num = route_num;
 
     //read route tbl
@@ -1105,7 +1191,7 @@ int read_route_tbl_frm_config(node_t *node)
     if (NULL == tmp_node_str)
     {
         fclose(fp);
-        printf("malloc mem (size: %u) err\n", buf_size);
+        dht_print("malloc mem (size: %u) err\n", buf_size);
         return -1;
     }
 
@@ -1113,7 +1199,7 @@ int read_route_tbl_frm_config(node_t *node)
     read_len = fread(tmp_node_str, str_len * sizeof(unsigned char), route_num, fp);
     if (read_len != route_num)
     {
-        printf("read err\n,real node cnt : %d\n", read_len);
+        dht_print("read err\n,real node cnt : %d\n", read_len);
         free(tmp_node_str);
         fclose(fp);
         return -1;
@@ -1143,7 +1229,7 @@ int read_route_tbl_frm_config(node_t *node)
 
     if (route_num != node->route_num)
     {
-        printf("[ERROR] not equal! read from file (%d), inserted route_num (%d)\n", route_num, node->route_num);
+        dht_print("[ERROR] not equal! read from file (%d), inserted route_num (%d)\n", route_num, node->route_num);
     }
 
     return 0;
@@ -1158,10 +1244,10 @@ int init_route_table(node_t*node)
     */
     if (NULL != node->bkt_tree)
     {
-        printf("read route success.\n");
+        dht_print("read route success.\n");
         return 0;
     }
-    printf("start init route table by find node!\n");
+    dht_print("start init route table by find node!\n");
     //ping bootstrap node
     sockaddr_in remote_addr;
     remote_addr.sin_family = AF_INET;
@@ -1174,7 +1260,7 @@ int init_route_table(node_t*node)
      int try_times = 0;
      while (try_times -- > 0)
      {
-         printf("rcv msg times %d:\n", try_times);
+         dht_print("rcv msg times %d:\n", try_times);
          ret = rcv_msg(node->recv_socket, node);
          if (ret == OK)
          {
@@ -1207,10 +1293,11 @@ void _send_first_msg(node_t*nod)
     q_mgr.snd_q.msg_cnt -= 1;
     char out[21] ={0};
     inet_bin_to_string(m->addr.sin_addr.S_un.S_addr, out);
-    printf("send one msg to ==============(%s)=====, snd q len (%d)\n",out, q_mgr.snd_q.msg_cnt);
+    dht_print("send one msg to ==============(%s)=====, snd q len (%d)\n",out, q_mgr.snd_q.msg_cnt);
 
     free(m);
     m = NULL;
+
 }
 
 /**
@@ -1220,7 +1307,7 @@ int tree_node_to_buffer(node_t *node, u_8 *buffer)
 {
     if (NULL == buffer)
     {
-        printf("malloc buf err\n");
+        dht_print("malloc buf err\n");
         return -1;
     }
     u_8*buf = buffer;
@@ -1230,7 +1317,7 @@ int tree_node_to_buffer(node_t *node, u_8 *buffer)
     init_tree_stack(t);
 
     bucket_tree_node_t *root = node->bkt_tree;
-    printf("root is null? ? %d\n", root ==NULL);
+    dht_print("root is null? ? %d\n", root ==NULL);
     if (NULL == root)
     {
         return -1;
@@ -1241,7 +1328,9 @@ int tree_node_to_buffer(node_t *node, u_8 *buffer)
     while(!tree_stack_is_empty(t))
     {
         bucket_tree_node_t *tmp = NULL;
-        tree_pop(t, &tmp);
+        if (-1 == tree_pop(t, &tmp))
+            continue;
+
         if (is_node_leaf(tmp))
         {
             for (int i = 0; i < BUCKET_SIZE; ++i)
@@ -1256,16 +1345,25 @@ int tree_node_to_buffer(node_t *node, u_8 *buffer)
                     buf += NODE_STR_PORT_LEN;
                     //char _ip_out [20] = {0};
                     //inet_bin_to_string(tmp->peer_nodes[i].node_ip, _ip_out);
-                    u_16 _port = *(u_16*)(tmp->peer_nodes[i].node_port);
+                   // u_16 _port = *(u_16*)(tmp->peer_nodes[i].node_port);
                     //_port = dht_ntohs(tmp->peer_nodes[i].node_port);
-                    u_8 *_ip = tmp->peer_nodes[i].node_ip;
-                    printf("buffer ip: %hhu.%hhu.%hhu.%hhu, port :%hu\n ",_ip[0], _ip[1], _ip[2], _ip[3] , _port);
+                    u_32 _ip =*(u_32*)tmp->peer_nodes[i].node_ip;
+                    //dht_print("buffer ip: %hhu.%hhu.%hhu.%hhu, port :%hu\n ",_ip[0], _ip[1], _ip[2], _ip[3] , _port);
+
+                    u_16 _port1 = dht_ntohs(tmp->peer_nodes[i].node_port);
+
+                    char out[20]={0};
+                    inet_bin_to_string(_ip, out);
+                    dht_print("buffer ip: %s, %hu \n", out, _port1);
+
                 }
             }
         }
         else
         {
+            if (tmp->l != NULL)
             tree_push(t, &tmp->l);
+            if (tmp->r != NULL)
             tree_push(t, &tmp->r);
         }
     }
@@ -1279,11 +1377,11 @@ void refresh_route(node_t *node, int type)
     u_8 *buffer = (u_8*)malloc((NODE_STR_LEN + NODE_STR_IP_LEN + NODE_STR_PORT_LEN) * route_num);
     if (NULL == buffer)
     {
-        printf("malloc buf err\n");
+        dht_print("malloc buf err\n");
         return ;
     }
     int ret = tree_node_to_buffer(node, buffer);
-    printf("cur route num: %d\n", route_num);
+    dht_print("****************cur route num: %d\n", route_num);
 
     sockaddr_in remote_addr;
     remote_addr.sin_family = AF_INET;
@@ -1328,6 +1426,7 @@ void find_neighbor(node_t*node)
         find_node(&remote_addr,node->node_id, node->node_id);
     }
     refresh_route(node, Y_TYPE_FIND_NODE);
+    //refresh_route(node, Y_TYPE_PING);
 }
 /**
 * timer for refresh route table
@@ -1339,7 +1438,7 @@ void *timer_thread(void*arg)
     int i = 0;
     while(true)
     {
-        printf("re-init (%d) time\n", ++i);
+        //dht_print("re-init (%d) time\n", ++i);
         sockaddr_in remote_addr;
         remote_addr.sin_family = AF_INET;
         u_16 x_port ;
@@ -1347,14 +1446,14 @@ void *timer_thread(void*arg)
         *x_low = 0x1a;
         *(x_low+1) = 0xe1;
         remote_addr.sin_port = x_port;//htons(6881);
-        //remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
+        remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
         u_32 _ip ;
         u_8 *y_ip = (u_8*)&_ip;
         *y_ip = 87;
         *(y_ip+1) = 98;
         *(y_ip+2) = 162;
         *(y_ip+3) = 88;
-        remote_addr.sin_addr.S_un.S_addr = _ip;// (inet_addr("87.98.162.88"));
+        //remote_addr.sin_addr.S_un.S_addr = _ip;// (inet_addr("87.98.162.88"));
         //int ret = find_node(nod->recv_socket,&remote_addr,nod->node_id, nod->node_id);
         //int ret = ping_node(&remote_addr,nod->node_id);
         find_neighbor(nod);
@@ -1375,7 +1474,7 @@ void *process_rcv_msg_thread(void*arg)
 
         while(q_mgr.rcv_q.msg_cnt <= 0)
         {
-            printf("rcv msg q is empty\n");
+            dht_print("rcv msg q is empty\n");
             pthread_cond_wait(&q_mgr.rcv_q.cond, &q_mgr.rcv_q.mutex);
         }
         memset(&dict, 0, sizeof(ben_dict_t));
@@ -1383,7 +1482,7 @@ void *process_rcv_msg_thread(void*arg)
         msg_t *m = container_of(msg_t, node, first);
         u_32 pos = 0;
 
-        printf("[info] buf:{%s} buflen{%d}\n", m->buf, m->buf_len);
+        dht_print("[info] buf:{%s} buflen{%d}\n", m->buf, m->buf_len);
         ben_coding(m->buf, m->buf_len, &pos);
 
         free(m);
@@ -1397,10 +1496,10 @@ void *process_rcv_msg_thread(void*arg)
         get_rsp_msg_type(&dict, &rsp_type);
         if (-1 == rsp_type)
         {
-            printf("get rsp type failed.\n");
+            dht_print("get rsp type failed.\n");
             return NULL;
         }
-        printf("handle rcv msg : type -> %s\n", type_desc[rsp_type]);
+        dht_print("handle rcv msg : type -> %s\n", type_desc[rsp_type]);
         switch(rsp_type)
         {
         case Y_TYPE_PING:
@@ -1460,7 +1559,7 @@ void* net_thread(void*arg)
         pthread_mutex_lock(&q_mgr.rcv_q.mutex);
         if (q_mgr.rcv_q.msg_cnt < MAX_MSG_QUEUE_SIZE)
         {
-            //printf("rcv msg...\n");
+            //dht_print("rcv msg...\n");
             rcv_msg(nod->recv_socket, nod);
             Sleep(50);
         }
@@ -1473,7 +1572,7 @@ void* net_thread(void*arg)
 
 int main()
 {
-    printf("ok dht spider\n");
+    dht_print("ok dht spider\n");
     node_t node = {0};
     int ret = init_self_node(&node);
     if (-1 == ret)
@@ -1486,6 +1585,8 @@ int main()
     // update route table by ping node in route table
 
     // receive msg from other node.
+
+    pthread_spin_init(&spin_lock, PTHREAD_PROCESS_PRIVATE);
 
     list_init(&q_mgr.rcv_q.q.node);
     list_init(&q_mgr.snd_q.q.node);
@@ -1502,37 +1603,37 @@ int main()
     pthread_t t1,t2,t3;
 
     ret = pthread_create(&t1, NULL, timer_thread, (void*)&node);
-    printf("create timer_thread thread ret (%d)\n", ret);
+    dht_print("create timer_thread thread ret (%d)\n", ret);
     ret = pthread_create(&t2, NULL, process_rcv_msg_thread, (void*)&node);
-    printf("create process_rcv_msg_thread ret (%d)\n", ret);
+    dht_print("create process_rcv_msg_thread ret (%d)\n", ret);
     ret = pthread_create(&t3, NULL, net_thread, (void*)&node);
-    printf("create net_thread ret (%d)\n", ret);
+    dht_print("create net_thread ret (%d)\n", ret);
 
     pthread_join(t3, NULL);
     u_long tip = inet_addr("0.0.0.1");
-    printf("inet addr (%u)\n", tip);
+    dht_print("inet addr (%u)\n", tip);
     u_8 *z = (u_8*)&tip;
-    printf("low->high: (%hu.%hu.%hu.%hu)\n", *z, *(z+1),*(z+2), *(z+3));
+    dht_print("low->high: (%hu.%hu.%hu.%hu)\n", *z, *(z+1),*(z+2), *(z+3));
 
     u_8 zz[]={1,2,3,4};
     tip = dht_ntohl(zz);
     z = (u_8*)&tip;
-    printf("low->high: (%hu.%hu.%hu.%hu)\n", *z, *(z+1),*(z+2), *(z+3));
+    dht_print("low->high: (%hu.%hu.%hu.%hu)\n", *z, *(z+1),*(z+2), *(z+3));
 
     u_8 zzz[]={4,5};
     tip = dht_ntohs(zzz);
     z = (u_8*)&tip;
-    printf("low->high: (%hu.%hu)\n", *z, *(z+1));
+    dht_print("low->high: (%hu.%hu)\n", *z, *(z+1));
 
     clear_node(&node);
 /*
-    printf("\ntest byte order of mingwin:\n");
+    dht_print("\ntest byte order of mingwin:\n");
 
     u_16 x = 0x1;
     u_8 *y = (u_8*)&x;
 
     int type = 0;
-    printf("lower address of x is: %hu, higher address of x is %hu:\n", *y, *(y+1));
+    dht_print("lower address of x is: %hu, higher address of x is %hu:\n", *y, *(y+1));
 
 
     char test_ping[]="d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe";
@@ -1541,7 +1642,7 @@ int main()
     memset(&dict, 0, sizeof(ben_dict_t));
     ben_coding(test_ping,strlen(test_ping),&pos);
     get_rsp_msg_type(&dict, &type);
-    printf("get test_ping msg type  : %d -> %s\n", type, type_desc[type]);
+    dht_print("get test_ping msg type  : %d -> %s\n", type, type_desc[type]);
 
     char test_ping_rsp[]="d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:pa1:y1:re";
     pos = 0;
@@ -1549,7 +1650,7 @@ int main()
     memset(&dict, 0, sizeof(ben_dict_t));
     ben_coding(test_ping_rsp,strlen(test_ping),&pos);
     get_rsp_msg_type(&dict, &type);
-    printf("get test_ping_rsp msg type : %d -> %s\n", type, type_desc[type]);
+    dht_print("get test_ping_rsp msg type : %d -> %s\n", type, type_desc[type]);
 
 
     char test_find_node_req[]="d1:ad2:id20:abcdefghij01234567896:target20:mnopqrstuvwxyz123456e1:q9:find_node1:t2:fa1:y1:qe";
@@ -1558,7 +1659,7 @@ int main()
     memset(&dict, 0, sizeof(ben_dict_t));
     ben_coding(test_find_node_req,strlen(test_find_node_req),&pos);
     get_rsp_msg_type(&dict, &type);
-    printf("get test_find_node_req msg type : %d -> %s\n", type, type_desc[type]);
+    dht_print("get test_find_node_req msg type : %d -> %s\n", type, type_desc[type]);
 
     char test_find_node_rsp[]="d1:rd2:id20:0123456789abcdefghij5:nodes9:def456...e1:t2:fa1:y1:re";
     pos = 0;
@@ -1566,7 +1667,7 @@ int main()
     memset(&dict, 0, sizeof(ben_dict_t));
     ben_coding(test_find_node_rsp,strlen(test_find_node_rsp),&pos);
     get_rsp_msg_type(&dict, &type);
-    printf("get test_find_node_rsp msg type : %d -> %s\n", type, type_desc[type]);
+    dht_print("get test_find_node_rsp msg type : %d -> %s\n", type, type_desc[type]);
 
 
     char test_get_peers_req[]="d1:ad2:id20:abcdefghij01234567899:info_hash20:mnopqrstuvwxyz123456e1:q9:get_peers1:t2:ga1:y1:qe";
@@ -1575,7 +1676,7 @@ int main()
     memset(&dict, 0, sizeof(ben_dict_t));
     ben_coding(test_get_peers_req,strlen(test_get_peers_req),&pos);
     get_rsp_msg_type(&dict, &type);
-    printf("get test_get_peers_req msg type : %d -> %s\n", type, type_desc[type]);
+    dht_print("get test_get_peers_req msg type : %d -> %s\n", type, type_desc[type]);
 
     char test_get_peers_rsp1[]="d1:rd2:id20:abcdefghij01234567895:token8:aoeusnth6:valuesl6:axje.u6:idhtnmee1:t2:ga1:y1:re";
     pos = 0;
@@ -1583,7 +1684,7 @@ int main()
     memset(&dict, 0, sizeof(ben_dict_t));
     ben_coding(test_get_peers_rsp1,strlen(test_get_peers_rsp1),&pos);
     get_rsp_msg_type(&dict, &type);
-    printf("get test_get_peers_rsp1 msg type : %d -> %s\n", type, type_desc[type]);
+    dht_print("get test_get_peers_rsp1 msg type : %d -> %s\n", type, type_desc[type]);
 
     char test_get_peers_rsp2[]="d1:rd2:id20:abcdefghij01234567895:nodes9:def456...5:token8:aoeusnthe1:t2:ga1:y1:re";
     pos = 0;
@@ -1591,7 +1692,7 @@ int main()
     memset(&dict, 0, sizeof(ben_dict_t));
     ben_coding(test_get_peers_rsp2,strlen(test_get_peers_rsp2),&pos);
     get_rsp_msg_type(&dict, &type);
-    printf("get test_get_peers_rsp2 msg type : %d -> %s\n", type, type_desc[type]);
+    dht_print("get test_get_peers_rsp2 msg type : %d -> %s\n", type, type_desc[type]);
 
 
     char test_announce_req[]="d1:ad2:id20:abcdefghij01234567899:info_hash20:mnopqrstuvwxyz1234564:porti6881e5:token8:aoeusnthe1:q13:announce_peer1:t2:aa1:y1:qe";
@@ -1600,7 +1701,7 @@ int main()
     memset(&dict, 0, sizeof(ben_dict_t));
     ben_coding(test_announce_req,strlen(test_announce_req),&pos);
     get_rsp_msg_type(&dict, &type);
-    printf("get test_announce_req msg type : %d -> %s\n", type, type_desc[type]);
+    dht_print("get test_announce_req msg type : %d -> %s\n", type, type_desc[type]);
 
     char test_announce_rsp[]="d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re";
     pos = 0;
@@ -1608,7 +1709,7 @@ int main()
     memset(&dict, 0, sizeof(ben_dict_t));
     ben_coding(test_announce_rsp,strlen(test_announce_rsp),&pos);
     get_rsp_msg_type(&dict, &type);
-    printf("get test_announce_rsp msg type : %d -> %s\n", type, type_desc[type]);
+    dht_print("get test_announce_rsp msg type : %d -> %s\n", type, type_desc[type]);
 */
 
 

@@ -430,9 +430,14 @@ int ben_coding(char*b, u_32 len,u_32 *pos) {
                 ret = ctx_peek(c, &tmp_ele);
                 if (ret == -1)
                 {
+                    if(c->stack_size == 0 && s->stack_size == 0)
+                    {
+                        return 0;
+                    }
                     printf("peek ctx failed. stack size (%d) (%d)\n", c->stack_size, s->stack_size);
                     return -1;
                 }
+                //printf("peek ctx: %s -> %s\n", str_desc[tmp_ele->str_type], tmp_ele->str);
 
                 if (tmp_ele->str_type == LIST_HEAD)
                 {
@@ -451,10 +456,14 @@ int ben_coding(char*b, u_32 len,u_32 *pos) {
                     ctx_pop(c, &e);
                 }else if(tmp_ele->str_type == DICT)
                 {
-
+                    //if (peek(s) == 'd')
+                    //{
+                       // status = DICT_WAIT_KEY;
+                    //}
+                    printf("err here\n");
                 }
-
                 break;
+
             default:
                 if (buf[0] > '0' && buf[0] <= '9')
                 {
@@ -482,6 +491,35 @@ int ben_coding(char*b, u_32 len,u_32 *pos) {
                     }
                     process_a_string(b, len, pos, s, str_type, &dict, c);
                 }
+                else if (buf[0] == '0')
+                {
+                    printf("get a 0 len str!\n");
+                    *pos += 1;
+
+                    if (peek(s) == 'd')
+                    {
+                        if (status == DICT_WAIT_KEY)
+                        {
+                            status = DICT_WAIT_VAL;
+                        }
+                        else if (status == DICT_WAIT_VAL)
+                        {
+                            e = NULL;
+                            ctx_pop(c, &e);
+
+                            status = DICT_WAIT_KEY;
+                        }
+
+                    }else if (peek(s) == 'l')
+                    {
+
+                    }
+                    else
+                    {
+                        printf("WRONG ! peek(s) = %c\n", peek(s));
+                    }
+
+                }
                 else
                 {
                     printf("read a ERR char :(%c)\n", buf[0]);
@@ -504,7 +542,7 @@ void print_result(stack_t *s, contex_stack_t *c)
     printf("dict size:%d\n", dict.ele_cnt);
     int list_cnt = 0;
     str_ele_t *temp = &dict.e[0];
-    while (NULL != temp && temp != temp->p.list_next_ref && (temp->str_type >= DICT && temp->str_type <BUTT))
+    /*while (NULL != temp && temp != temp->p.list_next_ref && (temp->str_type >= DICT && temp->str_type <BUTT))
     {
         printf("key: %s\n", temp->str);
         str_ele_t *val = temp->p.dict_val_ref;
@@ -518,7 +556,7 @@ void print_result(stack_t *s, contex_stack_t *c)
         }
         temp = temp->p.list_next_ref;
     }
-
+*/
 
     printf("---------------------------------------\nctx stack size: (%d)\n", c->stack_size);
     for (int p = 0; p < c->stack_size ; ++p)
@@ -661,10 +699,19 @@ int main1()
     //char *buffer = "d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re";
     //char *buffer = "d2:ip6:10.1.11:rd2:id20:11111111111111111111e1:t2:aa1:y1:re";
     //char *buffer = "d1:eli201e23:A Generic Error Ocurrede1:t2:aa1:y1:ee";
-    char *buffer = "d1:ad2:id20:abcdefghij01234567896:target20:abcdefghij0123456789e1:q9:find_node1:t2:aa1:y1:qe";
+    //char *buffer = "d1:ad2:id20:abcdefghij01234567896:target20:abcdefghij0123456789e1:q9:find_node1:t2:aa1:y1:qe";
+    char *buffer = "d1:rd2:id20:0123456789abcdefghij5:nodes0:e1:t2:aa1:y1:re";
     u_32 len = strlen(buffer);
     u_32 pos = 0;
     ben_coding(buffer, len, &pos);
-    print_result(&g_stack, &g_ctx_stack);
+    ///print_result(&g_stack, &g_ctx_stack);
+     str_ele_t *temp = &dict.e[0];
+     printf("%s\n", temp->str);
+     str_ele_t *t = temp->p.dict_val_ref;
+     while(t!=NULL)
+     {
+         printf("%s\n", t->str);
+         t = t->p.list_next_ref;
+     }
     return 0;
 }

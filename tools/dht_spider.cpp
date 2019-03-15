@@ -865,6 +865,69 @@ void generate_middle_str(u_8 *ret, u_8 *start_str, u_8 *end_str)
     print_node_str(_add, NODE_STR_LEN +1);
     big_bit_half(_add, ret);
 }
+
+int __check_if_split_ok(bucket_tree_node_t*bkt_tree, bucket_tree_node_t*parent_tree)
+{
+    u_8 tmp_middle_str[NODE_STR_LEN +1] ={0};
+    generate_middle_str(tmp_middle_str, bkt_tree->range_start_str, bkt_tree->range_end_str);
+
+    memcpy(bkt_tree->l->range_start_str, bkt_tree->range_start_str, NODE_STR_LEN +1);
+    memcpy(bkt_tree->l->range_end_str, tmp_middle_str, NODE_STR_LEN +1);
+
+    memcpy(bkt_tree->r->range_start_str, tmp_middle_str, NODE_STR_LEN+1);
+    memcpy(bkt_tree->r->range_end_str, bkt_tree->range_end_str, NODE_STR_LEN+1);
+
+    memcpy(bkt_tree->range_start_str, tmp_middle_str, NODE_STR_LEN+1);
+    memcpy(bkt_tree->range_end_str, tmp_middle_str, NODE_STR_LEN+1);
+
+    int ll = 0;
+    int rr = 0;
+    for (int j = 0; j < BUCKET_SIZE; ++j)
+    {
+        u_8 t[NODE_STR_LEN+1] = {0};
+        convert_node_str(parent_tree->peer_nodes[j].node_str, t);
+        if (1 == cmp_node_str(tmp_middle_str, t))
+        {
+            ll ++;
+        }
+        else
+        {
+            rr ++;
+        }
+    }
+
+    if (0 == ll )
+    {
+        return 1;
+    }
+    if (0 == rr)
+    {
+        return -1;
+    }
+
+    return 0;
+
+}
+
+
+int __split_into_two_bkt(bucket_tree_node_t*parent)
+{
+    parent->l = (bucket_tree_node_t*)malloc(sizeof(bucket_tree_node_t));
+    parent->r = (bucket_tree_node_t*)malloc(sizeof(bucket_tree_node_t));
+    if (NULL == parent->l || NULL == parent->r)
+    {
+        free(parent->l);
+        free(parent->r);
+        parent->l = NULL;
+        parent->r = NULL;
+        dht_print("[debug] mem alloc err\n");
+        return -1;
+    }
+    memset(parent->l, 0, sizeof(bucket_tree_node_t));
+    memset(parent->r, 0, sizeof(bucket_tree_node_t));
+    return 0;
+
+}
 /**
 * here node_str is NODE_STR_LEN +1
 */
@@ -935,36 +998,26 @@ int insert_into_bkt(node_t *node, bucket_tree_node_t *bkt_tree, u_8 *node_str, u
     }
     // bkt should split into two bucket
     dht_print("ssssssssssssplit~~~~\n");
-    bkt_tree->l = (bucket_tree_node_t*)malloc(sizeof(bucket_tree_node_t));
-    bkt_tree->r = (bucket_tree_node_t*)malloc(sizeof(bucket_tree_node_t));
-    if (NULL == bkt_tree || NULL == bkt_tree)
+    bool split_ok = false;
+    bucket_tree_node_t *tmp_root = bkt_tree;
+    while(!split_ok)
     {
-        free(bkt_tree->l);
-        free(bkt_tree->r);
-        bkt_tree->l = NULL;
-        bkt_tree->r = NULL;
-        dht_print("[debug] mem alloc err\n");
-        return -1;
+        __split_into_two_bkt(tmp_root);
+        int ret = __check_if_split_ok(tmp_root, bkt_tree);
+        if (1 == ret)
+        {
+            tmp_root = tmp_root->r;
+        }
+        else if (-1 == ret)
+        {
+            tmp_root = tmp_root->l;
+        }
+        else
+        {
+            split_ok = true;
+        }
     }
-    memset(bkt_tree->l, 0, sizeof(bucket_tree_node_t));
-    memset(bkt_tree->r, 0, sizeof(bucket_tree_node_t));
-    //old bkt start = end
-    u_8 tmp_middle_str[NODE_STR_LEN +1] ={0};
-    dht_print("middddddddddddd~~~~\n");
 
-    generate_middle_str(tmp_middle_str, bkt_tree->range_start_str, bkt_tree->range_end_str);
-    print_node_str(tmp_middle_str, NODE_STR_LEN+1);
-     dht_print("miiiiiiiiiiiiiiiiiiiii~~~~\n");
-
-
-    memcpy(bkt_tree->l->range_start_str, bkt_tree->range_start_str, NODE_STR_LEN +1);
-    memcpy(bkt_tree->l->range_end_str, tmp_middle_str, NODE_STR_LEN +1);
-
-    memcpy(bkt_tree->r->range_start_str, tmp_middle_str, NODE_STR_LEN+1);
-    memcpy(bkt_tree->r->range_end_str, bkt_tree->range_end_str, NODE_STR_LEN+1);
-
-    memcpy(bkt_tree->range_start_str, tmp_middle_str, NODE_STR_LEN+1);
-    memcpy(bkt_tree->range_end_str, tmp_middle_str, NODE_STR_LEN+1);
 
     int ll = 0;
     int rr = 0;
@@ -972,44 +1025,43 @@ int insert_into_bkt(node_t *node, bucket_tree_node_t *bkt_tree, u_8 *node_str, u
     {
         u_8 t[NODE_STR_LEN+1] = {0};
         convert_node_str(bkt_tree->peer_nodes[j].node_str, t);
-        if (1 == cmp_node_str(tmp_middle_str, t))
+        if (1 == cmp_node_str(tmp_root->range_start_str, t))
         {
-            memcpy(&bkt_tree->l->peer_nodes[ll++], &bkt_tree->peer_nodes[j], sizeof(peer_info_t));
-            dht_print("[debug] re-insert one to NOT_USE slot LEFT %d,%d \n", bkt_tree->l->l == NULL, bkt_tree->l->r == NULL);
+            memcpy(&tmp_root->l->peer_nodes[ll++], &bkt_tree->peer_nodes[j], sizeof(peer_info_t));
+            dht_print("[debug] re-insert one to NOT_USE slot LEFT %d,%d \n", tmp_root->l->l == NULL, tmp_root->l->r == NULL);
         }
         else
         {
-            memcpy(&bkt_tree->r->peer_nodes[rr++], &bkt_tree->peer_nodes[j], sizeof(peer_info_t));
-            dht_print("[debug] re-insert one to NOT_USE slot RIGHT %d,%d !\n", bkt_tree->r->l == NULL, bkt_tree->r->r == NULL);
+            memcpy(&tmp_root->r->peer_nodes[rr++], &bkt_tree->peer_nodes[j], sizeof(peer_info_t));
+            dht_print("[debug] re-insert one to NOT_USE slot RIGHT %d,%d !\n", tmp_root->r->l == NULL, tmp_root->r->r == NULL);
         }
     }
     //insert cur new node_str
-    if (1 == cmp_node_str(tmp_middle_str, node_str))
+    if (1 == cmp_node_str(tmp_root->range_start_str, node_str))
     {
-        memcpy(bkt_tree->l->peer_nodes[ll].node_str, node_str +1, NODE_STR_LEN);
-        memcpy(bkt_tree->l->peer_nodes[ll].node_ip, node_ip, NODE_STR_IP_LEN);
-        memcpy(bkt_tree->l->peer_nodes[ll].node_port, node_port, NODE_STR_PORT_LEN);
-        bkt_tree->l->peer_nodes[ll].status = IN_USE;
+        memcpy(tmp_root->l->peer_nodes[ll].node_str, node_str +1, NODE_STR_LEN);
+        memcpy(tmp_root->l->peer_nodes[ll].node_ip, node_ip, NODE_STR_IP_LEN);
+        memcpy(tmp_root->l->peer_nodes[ll].node_port, node_port, NODE_STR_PORT_LEN);
+        tmp_root->l->peer_nodes[ll].status = IN_USE;
         time_t t ;
         time(&t);
-        bkt_tree->r->peer_nodes[ll].update_time = t;
-        dht_print("[debug] re-insert one to NOT_USE slot LEFT NEW %d,%d !\n", bkt_tree->l->l == NULL, bkt_tree->l->r == NULL);
+        tmp_root->r->peer_nodes[ll].update_time = t;
+        dht_print("[debug] re-insert one to NOT_USE slot LEFT NEW %d,%d !\n", tmp_root->l->l == NULL, tmp_root->l->r == NULL);
     }
     else
     {
-        memcpy(bkt_tree->r->peer_nodes[rr].node_str, node_str +1, NODE_STR_LEN);
-        memcpy(bkt_tree->r->peer_nodes[rr].node_ip, node_ip, NODE_STR_IP_LEN);
-        memcpy(bkt_tree->r->peer_nodes[rr].node_port, node_port, NODE_STR_PORT_LEN);
-        bkt_tree->r->peer_nodes[rr].status = IN_USE;
+        memcpy(tmp_root->r->peer_nodes[rr].node_str, node_str +1, NODE_STR_LEN);
+        memcpy(tmp_root->r->peer_nodes[rr].node_ip, node_ip, NODE_STR_IP_LEN);
+        memcpy(tmp_root->r->peer_nodes[rr].node_port, node_port, NODE_STR_PORT_LEN);
+        tmp_root->r->peer_nodes[rr].status = IN_USE;
         time_t t ;
         time(&t);
-        bkt_tree->r->peer_nodes[rr].update_time = t;
-        dht_print("[debug] re-insert one to NOT_USE slot RIGHT NEW %d,%d !\n", bkt_tree->r->l == NULL, bkt_tree->r->r == NULL);
+        tmp_root->r->peer_nodes[rr].update_time = t;
+        dht_print("[debug] re-insert one to NOT_USE slot RIGHT NEW %d,%d !\n", tmp_root->r->l == NULL, tmp_root->r->r == NULL);
     }
     node->route_num += 1;
     //dht_print("init okkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\n");
     return 0;
-
 }
 
 /**
@@ -1497,7 +1549,7 @@ void *process_rcv_msg_thread(void*arg)
         if (-1 == rsp_type)
         {
             dht_print("get rsp type failed.\n");
-            return NULL;
+            continue;
         }
         dht_print("handle rcv msg : type -> %s\n", type_desc[rsp_type]);
         switch(rsp_type)

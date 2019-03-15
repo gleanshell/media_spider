@@ -571,14 +571,14 @@ int handle_find_node_rsp(ben_dict_t *dict, node_t *node)
 
     u_8 * temp =(u_8*)nodes_str;
     int ret = -1;
-    for (int j = 0; j < node_num ; ++j )
+    /*for (int j = 0; j < node_num ; ++j )
     {
         for(int k=0;k< 26; ++k)
         {
             dht_print("%hhu.", *(temp+j*26+k) );
         }
         dht_print("\n");
-    }
+    }*/
     int i;
     for (i= 0; i < node_num; ++i)
     {
@@ -862,7 +862,7 @@ void generate_middle_str(u_8 *ret, u_8 *start_str, u_8 *end_str)
 {
     u_8 _add[NODE_STR_LEN + 1] ={0};
     big_bit_add(start_str, end_str, _add);
-    print_node_str(_add, NODE_STR_LEN +1);
+    //print_node_str(_add, NODE_STR_LEN +1);
     big_bit_half(_add, ret);
 }
 
@@ -949,8 +949,8 @@ int insert_into_bkt(node_t *node, bucket_tree_node_t *bkt_tree, u_8 *node_str, u
             }
             dht_print("@@@@@@@@@@@@@@@@@@@@@@ same node: %d\n", node->route_num);
 
-            print_node_str(t, NODE_STR_LEN +1);
-            print_node_str(node_str, NODE_STR_LEN +1);
+            //print_node_str(t, NODE_STR_LEN +1);
+            //print_node_str(node_str, NODE_STR_LEN +1);
 
 
             return 0 ;
@@ -979,7 +979,7 @@ int insert_into_bkt(node_t *node, bucket_tree_node_t *bkt_tree, u_8 *node_str, u
         bkt_tree->peer_nodes[first_empty_slot].update_time = t;
         node->route_num += 1;
         //dht_print("[debug] insert one to NOT_USE slot(%d)\n", first_empty_slot);
-        print_node_str(node_str, NODE_STR_LEN+1);
+        //print_node_str(node_str, NODE_STR_LEN+1);
         return 0;
     }
 
@@ -1177,7 +1177,7 @@ int save_route_tbl_to_file(node_t* node)
                     //dht_print("write ip: %hhu.%hhu.%hhu.%hhu, port :%hu, %hu\n ",_ip[0], _ip[1], _ip[2], _ip[3] , _port1, _port);
                     char out[20]={0};
                     inet_bin_to_string(_ip, out);
-                    dht_print("write ip: %s, %hu \n", out, _port1);
+                    //dht_print("write ip: %s, %hu \n", out, _port1);
                 }
             }
         }
@@ -1406,7 +1406,7 @@ int tree_node_to_buffer(node_t *node, u_8 *buffer)
 
                     char out[20]={0};
                     inet_bin_to_string(_ip, out);
-                    dht_print("buffer ip: %s, %hu \n", out, _port1);
+                    //dht_print("buffer ip: %s, %hu \n", out, _port1);
 
                 }
             }
@@ -1549,6 +1549,7 @@ void *process_rcv_msg_thread(void*arg)
         if (-1 == rsp_type)
         {
             dht_print("get rsp type failed.\n");
+            pthread_mutex_unlock(&q_mgr.rcv_q.mutex);
             continue;
         }
         dht_print("handle rcv msg : type -> %s\n", type_desc[rsp_type]);

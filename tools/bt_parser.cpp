@@ -700,17 +700,38 @@ int main1()
     //char *buffer = "d2:ip6:10.1.11:rd2:id20:11111111111111111111e1:t2:aa1:y1:re";
     //char *buffer = "d1:eli201e23:A Generic Error Ocurrede1:t2:aa1:y1:ee";
     //char *buffer = "d1:ad2:id20:abcdefghij01234567896:target20:abcdefghij0123456789e1:q9:find_node1:t2:aa1:y1:qe";
-    char *buffer = "d1:rd2:id20:0123456789abcdefghij5:nodes0:e1:t2:aa1:y1:re";
+    //char *buffer = "d1:rd2:id20:0123456789abcdefghij5:nodes0:e1:t2:aa1:y1:re";
+    //char *buffer = "d1:rd2:id20:abcdefghij01234567895:token8:aoeusnth6:valuesl6:axje.u6:idhtnmee1:t2:aa1:y1:re";
+    char *buffer = "d1:ad2:id20:abcdefghij01234567896:target20:mnopqrstuvwxyz123456e1:q9:find_node1:t2:aa1:y1:qe";
     u_32 len = strlen(buffer);
     u_32 pos = 0;
     ben_coding(buffer, len, &pos);
-    ///print_result(&g_stack, &g_ctx_stack);
+    print_result(&g_stack, &g_ctx_stack);
      str_ele_t *temp = &dict.e[0];
      printf("%s\n", temp->str);
      str_ele_t *t = temp->p.dict_val_ref;
      while(t!=NULL)
      {
          printf("%s\n", t->str);
+         if (t->str[0] == 'a')
+         {
+             str_ele_t *t1 = t->p.dict_val_ref->p.dict_val_ref;
+             while(NULL != t1)
+             {
+                 printf("r: [%s]\n", t1->str);
+                 if (t1->str[0] == 'i' || t1->str[0] == 't')
+                 {
+                     str_ele_t *t2 = t1->p.dict_val_ref;
+                     while(NULL != t2)
+                     {
+                         printf("values: [%s]\n", t2->str);
+                         t2 = t2->p.list_next_ref;
+                     }
+
+                 }
+                 t1 = t1->p.list_next_ref;
+             }
+         }
          t = t->p.list_next_ref;
      }
     return 0;

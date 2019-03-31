@@ -20,7 +20,7 @@ extern void print_result(stack_t *s, contex_stack_t *c);
 
 int insert_into_bucket_tree(node_t *node, bucket_tree_node_t **root,u_8 *node_str, u_8 *node_ip, u_8 *node_port, u_8 *self_node_id);
 int save_route_tbl_to_file(node_t* node);
-
+int find_prop_node(bucket_tree_node_t *bkt_tree, bucket_tree_node_t **ret, u_8 *node_str);
 pthread_spinlock_t spin_lock;
 void dht_print(const char* fmt, ...)
 {
@@ -212,9 +212,14 @@ int ping_node(sockaddr_in* addr, unsigned char* self_node_id)
     m->addr = *addr;
     m->buf_len = strlen("d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe");
     memcpy(m->buf, ping_str_start, m->buf_len);
+
+    pthread_mutex_lock(&q_mgr.snd_q.mutex);
     list_add_tail(&q_mgr.snd_q.q.node, &m->node);
     q_mgr.snd_q.msg_cnt += 1;
-    pthread_cond_signal(&q_mgr.snd_q.cond);
+    pthread_mutex_unlock(&q_mgr.snd_q.mutex);
+    pthread_cond_signal(&q_mgr.cond);
+    //pthread_cond_signal(&q_mgr.snd_q.cond);
+
     return OK;
 }
 
@@ -265,9 +270,13 @@ int find_node(sockaddr_in* addr, u_8 * id, u_8 *tgt)
     m->addr = *addr;
     m->buf_len = send_len;//strlen("d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe");
     memcpy(m->buf, snd_str, m->buf_len);
+
+    pthread_mutex_lock(&q_mgr.snd_q.mutex);
     list_add_tail(&q_mgr.snd_q.q.node, &m->node);
     q_mgr.snd_q.msg_cnt += 1;
-    pthread_cond_signal(&q_mgr.snd_q.cond);
+    pthread_mutex_unlock(&q_mgr.snd_q.mutex);
+    pthread_cond_signal(&q_mgr.cond);
+    //pthread_cond_signal(&q_mgr.snd_q.cond);
 
 
     return OK;
@@ -506,9 +515,358 @@ void inet_bin_to_string(u_32 ip, char output[])
     }
 }
 
-void handle_ping_rsp()
+void handle_on_ping(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
+{//B±àÂë=d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re
+    printf("get a ping req...\n");
+    str_ele_t *e = dict->e[0].p.dict_val_ref;
+    char peer_tid[4] = {0};
+    int peer_tid_len = 0;
+    while (NULL != e)
+    {
+        if (0 == strcmp(e->str, "t"))
+        {
+            peer_tid_len = e->p.dict_val_ref->str_len;
+            if (peer_tid_len > 4)
+            {
+                dht_print("erro tid len(%d)\n", peer_tid_len);
+                break;
+            }
+            dht_print("\nget a ping req tid: %s, len (%d)\n", e->p.dict_val_ref->str, peer_tid_len);
+            memcpy(peer_tid, e->p.dict_val_ref->str,  peer_tid_len);
+            break;
+        }
+        e = e->p.list_next_ref;
+    }
+    if (0 == peer_tid_len)
+    {
+        dht_print("[E] not find tid.\n");
+        return;
+    }
+
+    //d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe
+    //d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re
+    char ping_rsp_str_start[100] = "d1:ad2:id20:";
+    int start_str_len = strlen((char*)ping_rsp_str_start);
+    memcpy(ping_rsp_str_start+ start_str_len, node->node_id, NODE_STR_LEN);
+
+    memcpy(ping_rsp_str_start+start_str_len+NODE_STR_LEN, "e1:t2:", 6);
+    memcpy(ping_rsp_str_start+start_str_len+NODE_STR_LEN +6, peer_tid, peer_tid_len);
+    memcpy(ping_rsp_str_start+start_str_len+NODE_STR_LEN +6 + peer_tid_len, "1:y1:re", 7);
+
+    msg_t *m = (msg_t*)malloc(sizeof(msg_t));
+    m->addr = *rcv_addr;
+    m->buf_len = strlen("d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe");
+    memcpy(m->buf, ping_rsp_str_start, m->buf_len);
+
+    pthread_mutex_lock(&q_mgr.snd_q.mutex);
+    list_add_tail(&q_mgr.snd_q.q.node, &m->node);
+    q_mgr.snd_q.msg_cnt += 1;
+    pthread_mutex_unlock(&q_mgr.snd_q.mutex);
+    pthread_cond_signal(&q_mgr.cond);
+
+    u_32 frm_ip = (rcv_addr->sin_addr.S_un.S_addr);
+    char out[20] ={0};
+    inet_bin_to_string(frm_ip, out);
+
+    printf("sending (%s) a on ping msg:(%s)\n",out, ping_rsp_str_start);
+}
+
+void handle_on_find_node(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
 {
-    dht_print("get a ping rsp...\n");
+    printf("get a find node req...\n");
+    str_ele_t *e = dict->e[0].p.dict_val_ref;
+    char peer_tid[4] = {0};
+    char peer_nid[NODE_STR_LEN] = {0};
+    char peer_tgtid[NODE_STR_LEN] = {0};
+    int peer_tid_len = 0;
+
+    bool find_peer_id = false, find_peer_tgt = false;
+    while (NULL != e)
+    {
+        if ('t' == e->str[0])
+        {
+            peer_tid_len = e->p.dict_val_ref->str_len;
+            if (peer_tid_len > 4)
+            {
+                dht_print("erro tid len(%d)\n", peer_tid_len);
+                break;
+            }
+            dht_print("\nget a find node req tid: %s, len (%d)\n", e->p.dict_val_ref->str, peer_tid_len);
+            memcpy(peer_tid, e->p.dict_val_ref->str,  peer_tid_len);
+            //break;
+        }
+        if (e->str[0] == 'a')
+        {
+            str_ele_t *e1 = e->p.dict_val_ref->p.dict_val_ref;
+            while(NULL != e1)
+            {
+                if (0 == strcmp(e1->str, "id"))
+                {
+                    memcpy(peer_nid, e1->str, e1->str_len);
+                    find_peer_id = true;
+                }
+                if (0 == strcmp(e1->str, "target"))
+                {
+                    memcpy(peer_tgtid, e1->str, e1->str_len);
+                    find_peer_tgt = true;
+                }
+                e1 = e1->p.list_next_ref;
+            }
+
+        }
+        e = e->p.list_next_ref;
+    }
+
+    if (!(find_peer_id && find_peer_tgt && peer_tid_len != 0))
+    {
+        dht_print("[ERROR] not find key word!\n");
+        return;
+    }
+    //»Ø¸´={"t":"aa", "y":"r", "r":{"id":"0123456789abcdefghij", "nodes":"def456..."}}
+    //B±àÂë=d1:rd2:id20:0123456789abcdefghij5:nodes9:def456...e1:t2:aa1:y1:re
+    char rsp_str[500]="d1:rd2:id20:";
+    char *tmp_str = rsp_str;
+    memcpy(tmp_str, node->node_id, NODE_STR_LEN);
+    tmp_str += NODE_STR_LEN;
+
+    memcpy(tmp_str, "5:nodes", 7 );
+    tmp_str += 7;
+
+    int nearest_node_num = 0;
+    char node_num_str[2] = {0};
+    sprintf(node_num_str, "%d", nearest_node_num);
+    memcpy(tmp_str, node_num_str, strlen(node_num_str) );
+    tmp_str += strlen(node_num_str);
+///////////////////////////////////////////
+    bucket_tree_node_t *nearest_node = NULL;
+    int ret = find_prop_node(node->bkt_tree, &nearest_node, (u_8 *)peer_tgtid);
+    if (-1 == ret)
+    {
+        dht_print("[ERROR] not find tgt node bkt!");
+        return;
+    }
+    char nodes_buffer[500] = {0};
+    char *tmp_nodes_buf = nodes_buffer;
+    for (int j = 0; j < BUCKET_SIZE; ++j)
+    {
+        if (nearest_node->peer_nodes[j].status != IN_USE)
+        {
+            continue;
+        }
+        memcpy(tmp_nodes_buf, nearest_node->peer_nodes[j].node_str, NODE_STR_LEN);
+        tmp_nodes_buf += NODE_STR_LEN;
+
+        memcpy(tmp_nodes_buf, nearest_node->peer_nodes[j].node_ip, NODE_STR_IP_LEN);
+        tmp_nodes_buf += NODE_STR_PORT_LEN;
+
+        memcpy(tmp_nodes_buf, nearest_node->peer_nodes[j].node_port, NODE_STR_PORT_LEN);
+
+        nearest_node_num ++;
+    }
+    int nod_buf_len = nearest_node_num * (NODE_STR_LEN+NODE_STR_IP_LEN+ NODE_STR_PORT_LEN);
+    memcpy(tmp_str, nodes_buffer, nod_buf_len);
+    tmp_str += nod_buf_len;
+
+    memcpy(tmp_str, "e1:t2:", 6);
+    tmp_str += 6;
+
+    memcpy(tmp_str, peer_tid, peer_tid_len);
+    tmp_str += peer_tid_len;
+
+    memcpy(tmp_str, "1:y1:re", 7);
+    tmp_str += 7;
+// send q------
+    msg_t *m = (msg_t*)malloc(sizeof(msg_t));
+    m->addr = *rcv_addr;
+    m->buf_len = (tmp_str - rsp_str);
+    if (m->buf_len > 500)
+    {
+        dht_print("[WARNING] msg too long (%d)\n", m->buf_len);
+        free(m);
+        m = NULL;
+        return;
+    }
+    memcpy(m->buf, rsp_str, m->buf_len);
+
+    pthread_mutex_lock(&q_mgr.snd_q.mutex);
+    list_add_tail(&q_mgr.snd_q.q.node, &m->node);
+    q_mgr.snd_q.msg_cnt += 1;
+    pthread_mutex_unlock(&q_mgr.snd_q.mutex);
+    pthread_cond_signal(&q_mgr.cond);
+
+    u_32 frm_ip = (rcv_addr->sin_addr.S_un.S_addr);
+    char out[20] ={0};
+    inet_bin_to_string(frm_ip, out);
+
+    dht_print("sending (%s) a on find node msg:(%s)\n",out, rsp_str);
+
+}
+
+void handle_on_get_peer(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
+{
+    printf("get a  get_peer req...\n");
+    //get_peersÇëÇó={"t":"aa", "y":"q","q":"get_peers", "a":{"id":"abcdefghij0123456789","info_hash":"mnopqrstuvwxyz123456"}}
+    //B±àÂë=d1:ad2:id20:abcdefghij01234567899:info_hash20:mnopqrstuvwxyz123456e1:q9:get_peers1:t2:aa1:y1:qe
+    str_ele_t *e = dict->e[0].p.dict_val_ref;
+    char peer_tid[4] = {0};
+    char peer_nid[NODE_STR_LEN] = {0};
+    char info_hash[NODE_STR_LEN] = {0};
+    int peer_tid_len = 0;
+
+    bool find_peer_id = false, find_peer_tgt = false;
+    while (NULL != e)
+    {
+        if ('t' == e->str[0])
+        {
+            peer_tid_len = e->p.dict_val_ref->str_len;
+            if (peer_tid_len > 4)
+            {
+                dht_print("erro tid len(%d)\n", peer_tid_len);
+                break;
+            }
+            dht_print("\nget a find node req tid: %s, len (%d)\n", e->p.dict_val_ref->str, peer_tid_len);
+            memcpy(peer_tid, e->p.dict_val_ref->str,  peer_tid_len);
+            //break;
+        }
+        if (e->str[0] == 'a')
+        {
+            str_ele_t *e1 = e->p.dict_val_ref->p.list_next_ref;
+            while(NULL != e1)
+            {
+                if (0 == strcmp(e1->str, "id"))
+                {
+                    memcpy(peer_nid, e1->str, e1->str_len);
+                    find_peer_id = true;
+                }
+                if (0 == strcmp(e1->str, "info_hash"))
+                {
+                    memcpy(info_hash, e1->str, e1->str_len);
+                    find_peer_tgt = true;
+                }
+                e1 = e1->p.list_next_ref;
+            }
+
+        }
+        e = e->p.list_next_ref;
+    }
+
+    if (!(find_peer_id && find_peer_tgt && peer_tid_len != 0))
+    {
+        dht_print("[ERROR] not find key word!\n");
+        return;
+    }
+    //»Ø¸´×î½Ó½üµÄnodes= {"t":"aa", "y":"r", "r":{"id":"abcdefghij0123456789", "token":"aoeusnth","nodes": "def456..."}}
+    //B±àÂë=d1:rd2:id20:abcdefghij01234567895:nodes9:def456...5:token8:aoeusnthe1:t2:aa1:y1:re
+    char rsp_str[500]="d1:rd2:id20:";
+    char *tmp_str = rsp_str;
+    memcpy(tmp_str, node->node_id, NODE_STR_LEN);
+    tmp_str += NODE_STR_LEN;
+
+    memcpy(tmp_str, "5:nodes", 7 );
+    tmp_str += 7;
+
+    int nearest_node_num = 0;
+    char node_num_str[2] = {0};
+    sprintf(node_num_str, "%d", nearest_node_num);
+    memcpy(tmp_str, node_num_str, strlen(node_num_str) );
+    tmp_str += strlen(node_num_str);
+///////////////////////////////////////////
+    bucket_tree_node_t *nearest_node = NULL;
+    int ret = find_prop_node(node->bkt_tree, &nearest_node, (u_8 *)info_hash);
+    if (-1 == ret)
+    {
+        dht_print("[ERROR] not find tgt node bkt!");
+        return;
+    }
+    char nodes_buffer[500] = {0};
+    char *tmp_nodes_buf = nodes_buffer;
+    for (int j = 0; j < BUCKET_SIZE; ++j)
+    {
+        if (nearest_node->peer_nodes[j].status != IN_USE)
+        {
+            continue;
+        }
+        memcpy(tmp_nodes_buf, nearest_node->peer_nodes[j].node_str, NODE_STR_LEN);
+        tmp_nodes_buf += NODE_STR_LEN;
+
+        memcpy(tmp_nodes_buf, nearest_node->peer_nodes[j].node_ip, NODE_STR_IP_LEN);
+        tmp_nodes_buf += NODE_STR_PORT_LEN;
+
+        memcpy(tmp_nodes_buf, nearest_node->peer_nodes[j].node_port, NODE_STR_PORT_LEN);
+
+        nearest_node_num ++;
+    }
+    int nod_buf_len = nearest_node_num * (NODE_STR_LEN+NODE_STR_IP_LEN+ NODE_STR_PORT_LEN);
+    memcpy(tmp_str, nodes_buffer, nod_buf_len);
+    tmp_str += nod_buf_len;
+
+    memcpy(tmp_str, "e1:t2:", 6);
+    tmp_str += 6;
+
+    memcpy(tmp_str, peer_tid, peer_tid_len);
+    tmp_str += peer_tid_len;
+
+    memcpy(tmp_str, "1:y1:re", 7);
+    tmp_str += 7;
+// send q------
+    msg_t *m = (msg_t*)malloc(sizeof(msg_t));
+    m->addr = *rcv_addr;
+    m->buf_len = (tmp_str - rsp_str);
+    if (m->buf_len > 500)
+    {
+        dht_print("[WARNING] msg too long (%d)\n", m->buf_len);
+        free(m);
+        m = NULL;
+        return;
+    }
+    memcpy(m->buf, rsp_str, m->buf_len);
+
+    pthread_mutex_lock(&q_mgr.snd_q.mutex);
+    list_add_tail(&q_mgr.snd_q.q.node, &m->node);
+    q_mgr.snd_q.msg_cnt += 1;
+    pthread_mutex_unlock(&q_mgr.snd_q.mutex);
+    pthread_cond_signal(&q_mgr.cond);
+
+    u_32 frm_ip = (rcv_addr->sin_addr.S_un.S_addr);
+    char out[20] ={0};
+    inet_bin_to_string(frm_ip, out);
+
+    dht_print("sending (%s) a on find peer msg:(%s)\n",out, rsp_str);
+
+}
+
+void handle_ping_rsp(ben_dict_t *dict, node_t *node)
+{
+    //printf("get a ping rsp...\n");
+    str_ele_t *e = dict->e[0].p.dict_val_ref;
+    bool find_id = false;
+    while (NULL != e)
+    {
+        //if (0 == strcmp(e->str, "r"))
+        if (e->str[0] == 'r' || e->str[0] == 'a')
+        {
+            //printf("\nget ping rsp r: %s\n", e->p.dict_val_ref->str);
+            str_ele_t *e1 = e->p.dict_val_ref->p.dict_val_ref;
+            while (NULL != e1)
+            {
+                if (0 == strcmp(e1->str, "id"))
+                {
+                    //printf("get ping rsp id of r: %s\n", e1->p.dict_val_ref->str);
+                    find_id = true;
+                    break;
+                }
+                e1 = e1->p.list_next_ref;
+            }
+
+        }
+       // printf("key:(%s)\n", e->str);
+        e = e->p.list_next_ref;
+    }
+    if (!find_id)
+    {
+        printf("\n not find id value!\n");
+    }
+
 }
 
 int handle_find_node_rsp(ben_dict_t *dict, node_t *node)
@@ -529,7 +887,7 @@ int handle_find_node_rsp(ben_dict_t *dict, node_t *node)
                 //dht_print("\nget find node rsp id of r: %s\n", e1->str);
                 if (0 == strcmp(e1->str, "id"))
                 {
-                    dht_print("\nget find node rsp id of r: %s\n", e1->p.dict_val_ref->str);
+                    //dht_print("\nget find node rsp id of r: %s\n", e1->p.dict_val_ref->str);
                     memcpy(id, e1->p.dict_val_ref->str, 20*sizeof(u_8));
                 }
                 if (0 == strcmp(e1->str, "nodes"))
@@ -543,7 +901,7 @@ int handle_find_node_rsp(ben_dict_t *dict, node_t *node)
                     {
                         return -1;
                     }
-                    dht_print("\nget ping rsp nodes of r(len:%d): %s\n", nodes_str_len, e1->p.dict_val_ref->str);
+                    //dht_print("\nget ping rsp nodes of r(len:%d): %s\n", nodes_str_len, e1->p.dict_val_ref->str);
                     memcpy(nodes_str, e1->p.dict_val_ref->str, nodes_str_len*sizeof(u_8));
                     //return 0;
                     find_node_str = true;
@@ -562,7 +920,7 @@ int handle_find_node_rsp(ben_dict_t *dict, node_t *node)
     }
     int node_ip_port_len = (NODE_STR_LEN + NODE_STR_IP_LEN + NODE_STR_PORT_LEN);
     int node_num = nodes_str_len / node_ip_port_len;
-    dht_print("nodes_len (%d), num (%d)\n", nodes_str_len, node_num);
+    //dht_print("nodes_len (%d), num (%d)\n", nodes_str_len, node_num);
     if (node_num *node_ip_port_len != nodes_str_len )
     {
         dht_print("nodes string is not compelete..\n");
@@ -593,8 +951,8 @@ int handle_find_node_rsp(ben_dict_t *dict, node_t *node)
 
         temp += (NODE_STR_LEN+ NODE_STR_IP_LEN + NODE_STR_PORT_LEN);
     }
-    dht_print("insert (%d) record to memory!\n now save to file\n", i);
-    save_route_tbl_to_file(node);
+    //dht_print("insert (%d) record to memory!\n now save to file\n", i);
+    //save_route_tbl_to_file(node);
     return 0;
 
 }
@@ -610,7 +968,7 @@ int rcv_msg(SOCKET s, node_t*node)
     inet_bin_to_string(frm_ip, out);
     if (ret > 0)
     {
-        dht_print("rcv msg frm-----(%s)---------,len(%d).\n",out, ret);
+        //dht_print("rcv msg frm-----(%s)---------,len(%d).\n",out, ret);
         msg_t *m = (msg_t*)malloc(sizeof(msg_t));
         m->addr = in_add;
         m->buf_len = ret;
@@ -618,34 +976,13 @@ int rcv_msg(SOCKET s, node_t*node)
         list_add_tail(&q_mgr.rcv_q.q.node,&m->node);
         q_mgr.rcv_q.msg_cnt += 1;
         pthread_cond_signal(&q_mgr.rcv_q.cond);
-        /*
 
-        u_32 pos = 0;
-        ben_coding(buffer, ret, &pos);
+
+        //u_32 pos = 0;
+        //ben_coding(buffer, ret, &pos);
 
         //print_result(&g_stack, &g_ctx_stack);
-        int rsp_type = -1;
-        get_rsp_msg_type(&dict, &rsp_type);
-        if (-1 == rsp_type)
-        {
-            dht_print("get rsp type failed.\n");
-            return OK;
-        }
-        switch(rsp_type)
-        {
-        case Y_TYPE_PING_RSP:
-            handle_ping_rsp();
 
-            break;
-        case Y_TYPE_FIND_NODE_RSP:
-            handle_find_node_rsp(&dict, node);
-            break;
-
-        default:
-            break;
-
-        }
-*/
         return OK;
 
     } else{
@@ -947,7 +1284,7 @@ int insert_into_bkt(node_t *node, bucket_tree_node_t *bkt_tree, u_8 *node_str, u
                 dht_print("[ERROR] should'nt happen \n");
                 bkt_tree->peer_nodes[i].status = IN_USE;
             }
-            dht_print("@@@@@@@@@@@@@@@@@@@@@@ same node: %d\n", node->route_num);
+            //dht_print("@@@@@@@@@@@@@@@@@@@@@@ same node: %d\n", node->route_num);
 
             //print_node_str(t, NODE_STR_LEN +1);
             //print_node_str(node_str, NODE_STR_LEN +1);
@@ -1148,7 +1485,7 @@ int save_route_tbl_to_file(node_t* node)
     init_tree_stack(t);
 
     bucket_tree_node_t *root = node->bkt_tree;
-    dht_print("root is null ? %d\n", root ==NULL);
+    //dht_print("root is null ? %d\n", root ==NULL);
 
     fwrite(node->node_id, 1, NODE_STR_LEN, fp);
     fwrite(&node->route_num, 1, sizeof(int),fp);
@@ -1345,7 +1682,7 @@ void _send_first_msg(node_t*nod)
     q_mgr.snd_q.msg_cnt -= 1;
     char out[21] ={0};
     inet_bin_to_string(m->addr.sin_addr.S_un.S_addr, out);
-    dht_print("send one msg to ==============(%s)=====, snd q len (%d)\n",out, q_mgr.snd_q.msg_cnt);
+    //dht_print("send one msg to ==============(%s)=====, snd q len (%d)\n",out, q_mgr.snd_q.msg_cnt);
 
     free(m);
     m = NULL;
@@ -1478,7 +1815,7 @@ void find_neighbor(node_t*node)
         find_node(&remote_addr,node->node_id, node->node_id);
     }
     refresh_route(node, Y_TYPE_FIND_NODE);
-    //refresh_route(node, Y_TYPE_PING);
+    refresh_route(node, Y_TYPE_PING);
 }
 /**
 * timer for refresh route table
@@ -1509,7 +1846,7 @@ void *timer_thread(void*arg)
         //int ret = find_node(nod->recv_socket,&remote_addr,nod->node_id, nod->node_id);
         //int ret = ping_node(&remote_addr,nod->node_id);
         find_neighbor(nod);
-        Sleep(50000);
+        Sleep(60000);
 
     }
 }
@@ -1519,14 +1856,17 @@ void *timer_thread(void*arg)
 */
 void *process_rcv_msg_thread(void*arg)
 {
+    sockaddr_in rcv_frm_addr;
     node_t *nod = (node_t*)arg;
+    char tmp_buff[500] = {0};
+    int tmp_buff_len = 0;
     while(true)
     {
         pthread_mutex_lock(&q_mgr.rcv_q.mutex);
 
         while(q_mgr.rcv_q.msg_cnt <= 0)
         {
-            dht_print("rcv msg q is empty\n");
+            //dht_print("rcv msg q is empty\n");
             pthread_cond_wait(&q_mgr.rcv_q.cond, &q_mgr.rcv_q.mutex);
         }
         memset(&dict, 0, sizeof(ben_dict_t));
@@ -1534,9 +1874,15 @@ void *process_rcv_msg_thread(void*arg)
         msg_t *m = container_of(msg_t, node, first);
         u_32 pos = 0;
 
-        dht_print("[info] buf:{%s} buflen{%d}\n", m->buf, m->buf_len);
+        //dht_print("[info] buf:{%s} buflen{%d}\n", m->buf, m->buf_len);
+        memset(tmp_buff, 0, 500);
+        memcpy(tmp_buff, m->buf, m->buf_len);
+        tmp_buff_len = m->buf_len;
         ben_coding(m->buf, m->buf_len, &pos);
+        //if (m->buf_len == 56)
+        //print_result(&g_stack, &g_ctx_stack);
 
+        rcv_frm_addr = m->addr;
         free(m);
         m = NULL;
         list_del(first);
@@ -1548,31 +1894,41 @@ void *process_rcv_msg_thread(void*arg)
         get_rsp_msg_type(&dict, &rsp_type);
         if (-1 == rsp_type)
         {
-            dht_print("get rsp type failed.\n");
+            //dht_print("get rsp type failed.\n");
+            dht_print("get rsp type failed [info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
             pthread_mutex_unlock(&q_mgr.rcv_q.mutex);
             continue;
         }
+        if (rsp_type != Y_TYPE_PING_RSP && rsp_type != Y_TYPE_FIND_NODE_RSP)
         dht_print("handle rcv msg : type -> %s\n", type_desc[rsp_type]);
         switch(rsp_type)
         {
         case Y_TYPE_PING:
+            handle_on_ping(&rcv_frm_addr, &dict, nod);
             break;
         case Y_TYPE_PING_RSP:
-            handle_ping_rsp();
+            handle_ping_rsp(&dict, nod);
             break;
         case Y_TYPE_FIND_NODE:
+            handle_on_find_node(&rcv_frm_addr, &dict, nod);
+            dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
             break;
         case Y_TYPE_FIND_NODE_RSP:
             handle_find_node_rsp(&dict, nod);
             break;
         case Y_TYPE_GET_PEER:
+            dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
+            break;
         case Y_TYPE_GET_PEER_RSP:
+            dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
             break;
         case Y_TYPE_ANNOUNCE_PEER:
         case Y_TYPE_ANNOUNCE_PEER_RSP:
+            dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
             break;
 
         default:
+            dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
             break;
 
         }

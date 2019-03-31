@@ -8,3 +8,4 @@ tools/*/*.torrent
 bin/*
 obj/*
 *.depend
+tools/dht_spider

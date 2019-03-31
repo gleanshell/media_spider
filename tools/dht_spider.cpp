@@ -626,6 +626,7 @@ void handle_on_find_node(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
     //B±àÂë=d1:rd2:id20:0123456789abcdefghij5:nodes9:def456...e1:t2:aa1:y1:re
     char rsp_str[500]="d1:rd2:id20:";
     char *tmp_str = rsp_str;
+    tmp_str += strlen(rsp_str);
     memcpy(tmp_str, node->node_id, NODE_STR_LEN);
     tmp_str += NODE_STR_LEN;
 
@@ -698,7 +699,7 @@ void handle_on_find_node(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
     char out[20] ={0};
     inet_bin_to_string(frm_ip, out);
 
-    dht_print("sending (%s) a on find node msg:(%s)\n",out, rsp_str);
+    dht_print("sending (%s) a on find node msg:(%s) len (%d)\n",out, rsp_str, m->buf_len);
 
 }
 

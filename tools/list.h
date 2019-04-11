@@ -47,6 +47,14 @@ static inline void list_del(list_head_t *del)
     del->next->prev = del->prev;
 }
 
+static inline void list_replace(list_head_t *new_node, list_head_t* old_node)
+{
+    old_node->prev->next = new_node;
+    new_node->next = old_node->next;
+    old_node->next->prev = new_node;
+    new_node->prev = old_node->prev;
+    list_init(old_node);
+}
 
 
 typedef struct test

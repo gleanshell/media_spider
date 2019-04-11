@@ -22,19 +22,22 @@ int insert_into_bucket_tree(node_t *node, bucket_tree_node_t **root,u_8 *node_st
 int save_route_tbl_to_file(node_t* node);
 int find_prop_node(bucket_tree_node_t *bkt_tree, bucket_tree_node_t **ret, u_8 *node_str);
 pthread_spinlock_t spin_lock;
+char print_buff[1000]={0};
 void dht_print(const char* fmt, ...)
 {
     pthread_spin_lock(&spin_lock);
     va_list ap;
     va_start(ap,fmt);
-
-    char *s=va_arg(ap,char*);
-    char *s1=va_arg(ap,char*);
-    char *s2=va_arg(ap,char*);
-    char *s3=va_arg(ap,char*);
-    printf(fmt,s, s1,s2);
+    memset(print_buff, 0, 1000);
+    vsprintf(print_buff, fmt, ap);
+    printf("%s\n",print_buff);
     va_end(ap);
     pthread_spin_unlock(&spin_lock);
+}
+
+void dht_print1(const char* fmt, ...)
+{
+
 }
 
 void print_node_str(u_8 *str, int len)
@@ -619,7 +622,7 @@ void handle_on_find_node(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
 
     if (!(find_peer_id && find_peer_tgt && peer_tid_len != 0))
     {
-        dht_print("[ERROR] not find key word!\n");
+        dht_print("[ERROR] not find key word! find peer id (%d), find peer tgt (%d), peer tid len (%d)\n", find_peer_id, find_peer_tgt, peer_tid_len);
         return;
     }
     //回复={"t":"aa", "y":"r", "r":{"id":"0123456789abcdefghij", "nodes":"def456..."}}
@@ -713,6 +716,7 @@ void handle_on_get_peer(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
     char peer_nid[NODE_STR_LEN] = {0};
     char info_hash[NODE_STR_LEN] = {0};
     int peer_tid_len = 0;
+    int info_hash_len = 0;
 
     bool find_peer_id = false, find_peer_tgt = false;
     while (NULL != e)
@@ -731,18 +735,19 @@ void handle_on_get_peer(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
         }
         if (e->str[0] == 'a')
         {
-            str_ele_t *e1 = e->p.dict_val_ref->p.list_next_ref;
+            str_ele_t *e1 = e->p.dict_val_ref->p.dict_val_ref;
             while(NULL != e1)
             {
                 if (0 == strcmp(e1->str, "id"))
                 {
-                    memcpy(peer_nid, e1->str, e1->str_len);
+                    memcpy(peer_nid, e1->p.dict_val_ref->str, e1->str_len);
                     find_peer_id = true;
                 }
                 if (0 == strcmp(e1->str, "info_hash"))
                 {
-                    memcpy(info_hash, e1->str, e1->str_len);
+                    memcpy(info_hash, e1->p.dict_val_ref->str, e1->str_len);
                     find_peer_tgt = true;
+                    info_hash_len = e1->str_len;
                 }
                 e1 = e1->p.list_next_ref;
             }
@@ -753,9 +758,15 @@ void handle_on_get_peer(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
 
     if (!(find_peer_id && find_peer_tgt && peer_tid_len != 0))
     {
-        dht_print("[ERROR] not find key word!\n");
+        dht_print("[ERROR] not find key word! find peer id (%d), find peer tgt (%d), peer tid len (%d)\n", find_peer_id, find_peer_tgt, peer_tid_len);
         return;
     }
+    char hash_hex[50] ={0};
+    for (int i = 0 ; i < info_hash_len; ++i)
+    {
+        vsprintf((char*)(hash_hex + i *2), "%02x", &info_hash[i]);
+    }
+    dht_print("[info-hash] %s ,len (%u);info_hash_len (%d) ", hash_hex, strlen(hash_hex), info_hash_len);
     //回复最接近的nodes= {"t":"aa", "y":"r", "r":{"id":"abcdefghij0123456789", "token":"aoeusnth","nodes": "def456..."}}
     //B编码=d1:rd2:id20:abcdefghij01234567895:nodes9:def456...5:token8:aoeusnthe1:t2:aa1:y1:re
     char rsp_str[500]="d1:rd2:id20:";
@@ -953,7 +964,7 @@ int handle_find_node_rsp(ben_dict_t *dict, node_t *node)
         temp += (NODE_STR_LEN+ NODE_STR_IP_LEN + NODE_STR_PORT_LEN);
     }
     //dht_print("insert (%d) record to memory!\n now save to file\n", i);
-    //save_route_tbl_to_file(node);
+    save_route_tbl_to_file(node);
     return 0;
 
 }
@@ -1673,21 +1684,27 @@ int init_route_table(node_t*node)
 
 void _send_first_msg(node_t*nod)
 {
-    list_head_t *first = q_mgr.snd_q.q.node.next;
-    msg_t *m = container_of(msg_t, node, first);
+    //list_head_t tmp_node = {&tmp_node,&tmp_node};
+    //list_replace(&tmp_node, q_mgr.snd_q.q.node);
+    int msg_cnt = q_mgr.snd_q.msg_cnt;
+    while(q_mgr.snd_q.msg_cnt > 0 )
+    {
+        list_head_t *first = q_mgr.snd_q.q.node.next;
+        msg_t *m = container_of(msg_t, node, first);
 
-    sendto(nod->recv_socket,(char *)m->buf, m->buf_len, 0,(sockaddr*)&m->addr, sizeof(struct sockaddr));
+        sendto(nod->recv_socket,(char *)m->buf, m->buf_len, 0,(sockaddr*)&m->addr, sizeof(struct sockaddr));
 
-    list_del(first);
+        list_del(first);
 
-    q_mgr.snd_q.msg_cnt -= 1;
-    char out[21] ={0};
-    inet_bin_to_string(m->addr.sin_addr.S_un.S_addr, out);
-    //dht_print("send one msg to ==============(%s)=====, snd q len (%d)\n",out, q_mgr.snd_q.msg_cnt);
+        q_mgr.snd_q.msg_cnt -= 1;
+        char out[21] ={0};
+        inet_bin_to_string(m->addr.sin_addr.S_un.S_addr, out);
+        //dht_print("send one msg to ==============(%s)=====, snd q len (%d)",out, q_mgr.snd_q.msg_cnt);
 
-    free(m);
-    m = NULL;
-
+        free(m);
+        m = NULL;
+    }
+    dht_print("send (%d) msgs.", msg_cnt);
 }
 
 /**
@@ -1813,6 +1830,7 @@ void find_neighbor(node_t*node)
         remote_addr.sin_family = AF_INET;
         remote_addr.sin_port = htons(6881);
         remote_addr.sin_addr.S_un.S_addr = (inet_addr("87.98.162.88"));
+        //remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
         find_node(&remote_addr,node->node_id, node->node_id);
     }
     refresh_route(node, Y_TYPE_FIND_NODE);
@@ -1918,6 +1936,7 @@ void *process_rcv_msg_thread(void*arg)
             handle_find_node_rsp(&dict, nod);
             break;
         case Y_TYPE_GET_PEER:
+            handle_on_get_peer(&rcv_frm_addr, &dict, nod);
             dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
             break;
         case Y_TYPE_GET_PEER_RSP:

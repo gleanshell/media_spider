@@ -2,7 +2,7 @@
 // Created by xx on 2018/8/26.
 //
 
-#include <cstdio>
+#include <stdio.h>
 #include "dht_spider.h"
 #include "bt_parser.h"
 #include <stdarg.h>
@@ -30,7 +30,7 @@ void dht_print(const char* fmt, ...)
     va_start(ap,fmt);
     memset(print_buff, 0, 1000);
     vsprintf(print_buff, fmt, ap);
-    printf("%s\n",print_buff);
+    printf("%s",print_buff);
     va_end(ap);
     pthread_spin_unlock(&spin_lock);
 }
@@ -148,45 +148,6 @@ int cmp_node_str(unsigned char * str1, unsigned char *str2)
         }
     }
     return 0;
-}
-
-/**  begin <= node_str < end */
-bool is_node_str_in_range(unsigned char *node_str, int begin, int end)
-{
-    unsigned char tmp_b[NODE_STR_LEN+1] = {0};
-    unsigned char tmp_e[NODE_STR_LEN+1] = {0};
-    int begin_idx = begin / 8;
-    int end_idx = end / 8;
-    unsigned char b = (unsigned char)(1 << (begin % 8));
-    unsigned char e = (unsigned char)(1 << (end % 8));
-    tmp_b[begin_idx] |= b;
-    tmp_e[end_idx] |= e;
-
-    int ret_bigger = cmp_node_str(node_str, tmp_b);
-    int ret_less = cmp_node_str(node_str, tmp_e);
-    if (end == 160)
-    {
-        ret_less = 1;
-    }
-
-    if (1 == ret_bigger && -1 == ret_less)
-    {
-        return true;
-    }
-
-    return false;
-}
-
-bool bucket_contain_node(bucket_t* bucket, unsigned char* node_str)
-{
-    for (int i = 0; i < BUCKET_SIZE; ++i)
-    {
-        if (0 == memcmp((void*)node_str,(void*)bucket->neibor_nodes[i],NODE_STR_LEN))
-        {
-            return true;
-        }
-    }
-    return false;
 }
 
 void update_bucket_update_time(bucket_t*bucket)
@@ -354,7 +315,7 @@ int get_peer_req_q_type(ben_dict_t *dict, int *type)
     {
         if (0 == strcmp(e->str, "q"))
         {
-            dht_print("\nget rsp q: %s\n", e->p.dict_val_ref->str);
+            //dht_print("\nget rsp q: %s\n", e->p.dict_val_ref->str);
             char type_str = e->p.dict_val_ref->str[0];
             switch (type_str)
             {
@@ -371,7 +332,7 @@ int get_peer_req_q_type(ben_dict_t *dict, int *type)
                 *type = Y_TYPE_GET_PEER;
                 return 0;
             default:
-
+                dht_print("[warning] get rsp q: %s\n", e->p.dict_val_ref->str);
                 break;
 
             }
@@ -454,10 +415,8 @@ B±àÂë=d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re
         }
         e = e->p.list_next_ref;
     }
-    dht_print("\n not find y value!\n");
+    dht_print("not find y value!\n");
     return -1;
-
-
 }
 
 int get_ip_in_ping_rsp(ben_dict_t *dict, u_32 *ip, u_16 *port)
@@ -467,14 +426,14 @@ int get_ip_in_ping_rsp(ben_dict_t *dict, u_32 *ip, u_16 *port)
     {
         if (0 == strcmp(e->str, "ip"))
         {
-            dht_print("\nget ping rsp ip: %s\n", e->p.dict_val_ref->str);
+            dht_print("get ping rsp ip: %s\n", e->p.dict_val_ref->str);
             memcpy(ip, e->p.dict_val_ref->str, sizeof(u_32));
             memcpy(port,e->p.dict_val_ref->str + sizeof(u_32), sizeof(u_16));
             return 0;
         }
         e = e->p.list_next_ref;
     }
-    dht_print("\n not find ip value!\n");
+    dht_print("not find ip value!\n");
     return -1;
 }
 
@@ -485,13 +444,13 @@ int get_id_in_ping_rsp(ben_dict_t *dict, u_8 *id)
     {
         if (0 == strcmp(e->str, "r"))
         {
-            dht_print("\nget ping rsp r: %s\n", e->p.dict_val_ref->str);
+            dht_print("get ping rsp r: %s\n", e->p.dict_val_ref->str);
             str_ele_t *e1 = e->p.dict_val_ref->p.dict_val_ref;
             while (NULL != e1)
             {
                 if (0 == strcmp(e1->str, "id"))
                 {
-                    dht_print("\nget ping rsp id of r: %s\n", e1->p.dict_val_ref->str);
+                    dht_print("get ping rsp id of r: %s\n", e1->p.dict_val_ref->str);
                     memcpy(id, e1->p.dict_val_ref->str, 20*sizeof(u_8));
                     return 0;
                 }
@@ -500,7 +459,7 @@ int get_id_in_ping_rsp(ben_dict_t *dict, u_8 *id)
         }
         e = e->p.list_next_ref;
     }
-    dht_print("\n not find id value!\n");
+    dht_print("not find id value!\n");
     return -1;
 }
 
@@ -520,7 +479,7 @@ void inet_bin_to_string(u_32 ip, char output[])
 
 void handle_on_ping(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
 {//B±àÂë=d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re
-    printf("get a ping req...\n");
+    dht_print("get a ping req...\n");
     str_ele_t *e = dict->e[0].p.dict_val_ref;
     char peer_tid[4] = {0};
     int peer_tid_len = 0;
@@ -571,12 +530,12 @@ void handle_on_ping(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
     char out[20] ={0};
     inet_bin_to_string(frm_ip, out);
 
-    printf("sending (%s) a on ping msg:(%s)\n",out, ping_rsp_str_start);
+    dht_print("sending (%s) a on ping msg:(%s)\n",out, ping_rsp_str_start);
 }
 
 void handle_on_find_node(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
 {
-    printf("get a find node req...\n");
+    //dht_print("get a find node req...\n");
     str_ele_t *e = dict->e[0].p.dict_val_ref;
     char peer_tid[4] = {0};
     char peer_nid[NODE_STR_LEN] = {0};
@@ -594,7 +553,7 @@ void handle_on_find_node(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
                 dht_print("erro tid len(%d)\n", peer_tid_len);
                 break;
             }
-            dht_print("\nget a find node req tid: %s, len (%d)\n", e->p.dict_val_ref->str, peer_tid_len);
+            dht_print("get a find node req tid: %s, len (%d)\n", e->p.dict_val_ref->str, peer_tid_len);
             memcpy(peer_tid, e->p.dict_val_ref->str,  peer_tid_len);
             //break;
         }
@@ -637,16 +596,13 @@ void handle_on_find_node(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
     tmp_str += 7;
 
     int nearest_node_num = 0;
-    char node_num_str[2] = {0};
-    sprintf(node_num_str, "%d", nearest_node_num);
-    memcpy(tmp_str, node_num_str, strlen(node_num_str) );
-    tmp_str += strlen(node_num_str);
+
 ///////////////////////////////////////////
     bucket_tree_node_t *nearest_node = NULL;
     int ret = find_prop_node(node->bkt_tree, &nearest_node, (u_8 *)peer_tgtid);
     if (-1 == ret)
     {
-        dht_print("[ERROR] not find tgt node bkt!");
+        dht_print("[ERROR] not find tgt node bkt!\n");
         return;
     }
     char nodes_buffer[500] = {0};
@@ -667,6 +623,12 @@ void handle_on_find_node(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
 
         nearest_node_num ++;
     }
+    char node_num_str[2] = {0};
+    sprintf(node_num_str, "%d:", nearest_node_num);
+    memcpy(tmp_str, node_num_str, strlen(node_num_str) );
+    tmp_str += strlen(node_num_str);
+    dht_print("get nearest (%s) peers!\n", node_num_str);
+
     int nod_buf_len = nearest_node_num * (NODE_STR_LEN+NODE_STR_IP_LEN+ NODE_STR_PORT_LEN);
     memcpy(tmp_str, nodes_buffer, nod_buf_len);
     tmp_str += nod_buf_len;
@@ -708,13 +670,14 @@ void handle_on_find_node(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
 
 void handle_on_get_peer(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
 {
-    printf("get a  get_peer req...\n");
+    //printf("get a  get_peer req...\n");
+    //print_result(&g_stack, &g_ctx_stack);
     //get_peersÇëÇó={"t":"aa", "y":"q","q":"get_peers", "a":{"id":"abcdefghij0123456789","info_hash":"mnopqrstuvwxyz123456"}}
     //B±àÂë=d1:ad2:id20:abcdefghij01234567899:info_hash20:mnopqrstuvwxyz123456e1:q9:get_peers1:t2:aa1:y1:qe
     str_ele_t *e = dict->e[0].p.dict_val_ref;
     char peer_tid[4] = {0};
     char peer_nid[NODE_STR_LEN] = {0};
-    char info_hash[NODE_STR_LEN] = {0};
+    char info_hash[NODE_STR_LEN+1] = {0};
     int peer_tid_len = 0;
     int info_hash_len = 0;
 
@@ -745,9 +708,9 @@ void handle_on_get_peer(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
                 }
                 if (0 == strcmp(e1->str, "info_hash"))
                 {
-                    memcpy(info_hash, e1->p.dict_val_ref->str, e1->str_len);
+                    memcpy(info_hash, e1->p.dict_val_ref->str, e1->p.dict_val_ref->str_len);
                     find_peer_tgt = true;
-                    info_hash_len = e1->str_len;
+                    info_hash_len = e1->p.dict_val_ref->str_len;
                 }
                 e1 = e1->p.list_next_ref;
             }
@@ -762,11 +725,12 @@ void handle_on_get_peer(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
         return;
     }
     char hash_hex[50] ={0};
+
     for (int i = 0 ; i < info_hash_len; ++i)
     {
-        vsprintf((char*)(hash_hex + i *2), "%02x", &info_hash[i]);
+        sprintf((char*)(&hash_hex[0] +i*2),  "%02x", (unsigned char)info_hash[i]);
     }
-    dht_print("[info-hash] %s ,len (%u);info_hash_len (%d) ", hash_hex, strlen(hash_hex), info_hash_len);
+    dht_print("[info-hash] %s ,len (%u);info_hash_len (%d)\n ", hash_hex, strlen(hash_hex), info_hash_len);
     //»Ø¸´×î½Ó½üµÄnodes= {"t":"aa", "y":"r", "r":{"id":"abcdefghij0123456789", "token":"aoeusnth","nodes": "def456..."}}
     //B±àÂë=d1:rd2:id20:abcdefghij01234567895:nodes9:def456...5:token8:aoeusnthe1:t2:aa1:y1:re
     char rsp_str[500]="d1:rd2:id20:";
@@ -778,16 +742,13 @@ void handle_on_get_peer(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
     tmp_str += 7;
 
     int nearest_node_num = 0;
-    char node_num_str[2] = {0};
-    sprintf(node_num_str, "%d", nearest_node_num);
-    memcpy(tmp_str, node_num_str, strlen(node_num_str) );
-    tmp_str += strlen(node_num_str);
+
 ///////////////////////////////////////////
     bucket_tree_node_t *nearest_node = NULL;
     int ret = find_prop_node(node->bkt_tree, &nearest_node, (u_8 *)info_hash);
     if (-1 == ret)
     {
-        dht_print("[ERROR] not find tgt node bkt!");
+        dht_print("[ERROR] not find tgt node bkt!\n");
         return;
     }
     char nodes_buffer[500] = {0};
@@ -808,6 +769,12 @@ void handle_on_get_peer(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
 
         nearest_node_num ++;
     }
+    char node_num_str[2] = {0};
+    sprintf(node_num_str, "%d:", nearest_node_num);
+    dht_print("get nearest (%s) peers!\n", node_num_str);
+    memcpy(tmp_str, node_num_str, strlen(node_num_str) );
+    tmp_str += strlen(node_num_str);
+
     int nod_buf_len = nearest_node_num * (NODE_STR_LEN+NODE_STR_IP_LEN+ NODE_STR_PORT_LEN);
     memcpy(tmp_str, nodes_buffer, nod_buf_len);
     tmp_str += nod_buf_len;
@@ -876,7 +843,7 @@ void handle_ping_rsp(ben_dict_t *dict, node_t *node)
     }
     if (!find_id)
     {
-        printf("\n not find id value!\n");
+        printf("not find id value!\n");
     }
 
 }
@@ -927,7 +894,7 @@ int handle_find_node_rsp(ben_dict_t *dict, node_t *node)
     }
     if (false == find_node_str)
     {
-       dht_print("\n not find key r !\n");
+       dht_print("not find key r !\n");
         return -1;
     }
     int node_ip_port_len = (NODE_STR_LEN + NODE_STR_IP_LEN + NODE_STR_PORT_LEN);
@@ -1051,7 +1018,7 @@ int init_rcv_socket(node_t *node)
     node->recv_socket = socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP);
     if (INVALID_SOCKET == node->recv_socket)
     {
-        dht_print("new socket err");
+        dht_print("new socket err\n");
         return -1;
     }
     u_long mode = 1;//set none-block socket
@@ -1084,7 +1051,7 @@ int init_send_socket(node_t *node)
     node->send_socket = socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP);
     if (INVALID_SOCKET == node->send_socket)
     {
-        dht_print("new socket err");
+        dht_print("new socket err\n");
         closesocket(node->send_socket);
         return -1;
     }
@@ -1704,7 +1671,7 @@ void _send_first_msg(node_t*nod)
         free(m);
         m = NULL;
     }
-    dht_print("send (%d) msgs.", msg_cnt);
+    dht_print("send (%d) msgs.\n", msg_cnt);
 }
 
 /**
@@ -1724,7 +1691,7 @@ int tree_node_to_buffer(node_t *node, u_8 *buffer)
     init_tree_stack(t);
 
     bucket_tree_node_t *root = node->bkt_tree;
-    dht_print("root is null? ? %d\n", root ==NULL);
+    //dht_print("root is null? ? %d\n", root ==NULL);
     if (NULL == root)
     {
         return -1;
@@ -1822,6 +1789,14 @@ void refresh_route(node_t *node, int type)
     buffer = NULL;
 }
 
+/**
+sess = lt.session()
+sess.add_dht_router('router.bittorrent.com', 6881)
+sess.add_dht_router('router.utorrent.com', 6881)
+sess.add_dht_router('router.bitcomet.com', 6881)
+sess.add_dht_router('dht.transmissionbt.com', 6881)
+sess.start_dht();
+*/
 void find_neighbor(node_t*node)
 {
     if (node->route_num == 0)
@@ -1834,7 +1809,7 @@ void find_neighbor(node_t*node)
         find_node(&remote_addr,node->node_id, node->node_id);
     }
     refresh_route(node, Y_TYPE_FIND_NODE);
-    refresh_route(node, Y_TYPE_PING);
+    //refresh_route(node, Y_TYPE_PING);
 }
 /**
 * timer for refresh route table
@@ -1902,12 +1877,13 @@ void *process_rcv_msg_thread(void*arg)
         //print_result(&g_stack, &g_ctx_stack);
 
         rcv_frm_addr = m->addr;
-        free(m);
-        m = NULL;
+
         list_del(first);
         q_mgr.rcv_q.msg_cnt -= 1;
 
-        //print_result(&g_stack, &g_ctx_stack);
+        free(m);
+        m = NULL;
+
 
         int rsp_type = -1;
         get_rsp_msg_type(&dict, &rsp_type);
@@ -1930,17 +1906,17 @@ void *process_rcv_msg_thread(void*arg)
             break;
         case Y_TYPE_FIND_NODE:
             handle_on_find_node(&rcv_frm_addr, &dict, nod);
-            dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
+            //dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
             break;
         case Y_TYPE_FIND_NODE_RSP:
             handle_find_node_rsp(&dict, nod);
             break;
         case Y_TYPE_GET_PEER:
             handle_on_get_peer(&rcv_frm_addr, &dict, nod);
-            dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
+            //dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
             break;
         case Y_TYPE_GET_PEER_RSP:
-            dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
+            //dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
             break;
         case Y_TYPE_ANNOUNCE_PEER:
         case Y_TYPE_ANNOUNCE_PEER_RSP:

@@ -571,10 +571,10 @@ void print_result(stack_t *s, contex_stack_t *c)
         {
         case DICT_KEY:
         //case DICT:
-            printf("key: %s-> %s ***** ",str_desc[dict.e[k].str_type], dict.e[k].str);
+            printf("key: %s-> %s ***** len(%d)\n ",str_desc[dict.e[k].str_type], dict.e[k].str, dict.e[k].str_len);
             if (dict.e[k].p.dict_val_ref != NULL)
             {
-                printf("val is: %s\n", dict.e[k].p.dict_val_ref->str);
+                printf("val is: %s, len (%d)\n", dict.e[k].p.dict_val_ref->str, dict.e[k].p.dict_val_ref->str_len);
 
                 str_ele_t *t = dict.e[k].p.dict_val_ref->p.list_next_ref;
                 while(t != NULL)

@@ -7,6 +7,7 @@
 #include "bt_parser.h"
 #include <stdarg.h>
 
+u_16 g_req_id;
 
 extern stack_t g_stack;
 extern contex_stack_t g_ctx_stack;
@@ -160,24 +161,67 @@ void update_bucket_update_time(bucket_t*bucket)
 int ping_node(sockaddr_in* addr, unsigned char* self_node_id)
 {
     //d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe
-    unsigned char ping_str_start[100] = "d1:ad2:id20:";
-    int start_str_len = strlen((char*)ping_str_start);
-    unsigned char ping_str_end[100] = "e1:q4:ping1:t2:pp1:y1:qe";
-    int end_str_len = strlen((char*)ping_str_end);
-    unsigned char ping_str_self_node_id[100] = "";
-    memcpy(ping_str_self_node_id, self_node_id, NODE_STR_LEN);
-    //strcat((char*)ping_str_start, (char*)ping_str_self_node_id);
-    memcpy((((char*)ping_str_start) + start_str_len), self_node_id, NODE_STR_LEN);
-    //strcat((char*)ping_str_start, (char*)ping_str_end);
-    memcpy((((char*)ping_str_start) + start_str_len + NODE_STR_LEN), ping_str_end, end_str_len);
-    //sendto(s,(char *)ping_str_start, strlen((char*)ping_str_start), 0,(sockaddr*)addr, sizeof(struct sockaddr));
-    //dht_print("send ping msg: %s\n", ping_str_start);
+    char ping_str_start[100] = "d1:ad2:id20:";
+    char *tmp_str = ping_str_start;
+    tmp_str += strlen(ping_str_start);
+
+    memcpy(tmp_str, self_node_id, NODE_STR_LEN);
+    tmp_str += NODE_STR_LEN;
+
+    char ping_str_end[100] = "e1:q4:ping1:t";
+    //"2:p";
+    size_t s_len = strlen(ping_str_end);
+    memcpy(tmp_str, ping_str_end, s_len);
+    tmp_str += s_len;
+
+    char tid_len_str[8] = {0};
+
+    u_16 ping_tid = g_req_id ++;
+    char ping_tid_str[8] = {0};
+    sprintf(ping_tid_str, "%hu", ping_tid);
+    s_len = strlen(ping_tid_str);
+
+    sprintf(tid_len_str, "%hu", (s_len+1));
+    size_t ss_len = strlen(tid_len_str);
+
+    memcpy(tmp_str, tid_len_str, ss_len);
+    tmp_str += ss_len;
+
+    memcpy(tmp_str, ":p", 2);
+    tmp_str += 2;
+
+    memcpy(tmp_str, ping_tid_str, s_len);
+    tmp_str += s_len;
+
+    char ping_str_end2[]="1:y1:qe";
+    s_len = strlen(ping_str_end2);
+    memcpy(tmp_str, ping_str_end2, s_len);
+    tmp_str += s_len;
+
     msg_t *m = (msg_t*)malloc(sizeof(msg_t));
+    if (NULL == m)
+    {
+        dht_print("[ERROR] ################ alloc mem err\n");
+        return ERR;
+    }
+    memset(m, 0, sizeof(msg_t));
     m->addr = *addr;
-    m->buf_len = strlen("d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe");
+    m->buf_len = (int)(tmp_str - ping_str_start);
     memcpy(m->buf, ping_str_start, m->buf_len);
+    //dht_print("[debug] ping msg {%s} len is (%d)\n",m->buf , m->buf_len);
 
     pthread_mutex_lock(&q_mgr.snd_q.mutex);
+
+    if (q_mgr.snd_q.msg_cnt >= MAX_MSG_QUEUE_SIZE)
+    {
+        free(m);
+        m = NULL;
+        dht_print("[warning] snd_q is full\n");
+        pthread_mutex_unlock(&q_mgr.snd_q.mutex);
+        pthread_cond_signal(&q_mgr.cond);
+        return ERR;
+    }
+
     list_add_tail(&q_mgr.snd_q.q.node, &m->node);
     q_mgr.snd_q.msg_cnt += 1;
     pthread_mutex_unlock(&q_mgr.snd_q.mutex);
@@ -236,6 +280,17 @@ int find_node(sockaddr_in* addr, u_8 * id, u_8 *tgt)
     memcpy(m->buf, snd_str, m->buf_len);
 
     pthread_mutex_lock(&q_mgr.snd_q.mutex);
+
+    if (q_mgr.snd_q.msg_cnt >= MAX_MSG_QUEUE_SIZE)
+    {
+        free(m);
+        m = NULL;
+        dht_print("[warning] snd_q is full\n");
+        pthread_mutex_unlock(&q_mgr.snd_q.mutex);
+        pthread_cond_signal(&q_mgr.cond);
+        return ERR;
+    }
+
     list_add_tail(&q_mgr.snd_q.q.node, &m->node);
     q_mgr.snd_q.msg_cnt += 1;
     pthread_mutex_unlock(&q_mgr.snd_q.mutex);
@@ -521,6 +576,16 @@ void handle_on_ping(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
     memcpy(m->buf, ping_rsp_str_start, m->buf_len);
 
     pthread_mutex_lock(&q_mgr.snd_q.mutex);
+    if (q_mgr.snd_q.msg_cnt >= MAX_MSG_QUEUE_SIZE)
+    {
+        free(m);
+        m = NULL;
+        dht_print("[warning] snd_q is full\n");
+        pthread_mutex_unlock(&q_mgr.snd_q.mutex);
+        pthread_cond_signal(&q_mgr.cond);
+        return;
+    }
+
     list_add_tail(&q_mgr.snd_q.q.node, &m->node);
     q_mgr.snd_q.msg_cnt += 1;
     pthread_mutex_unlock(&q_mgr.snd_q.mutex);
@@ -623,13 +688,15 @@ void handle_on_find_node(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
 
         nearest_node_num ++;
     }
-    char node_num_str[2] = {0};
-    sprintf(node_num_str, "%d:", nearest_node_num);
+    int nod_buf_len = nearest_node_num * (NODE_STR_LEN+NODE_STR_IP_LEN+ NODE_STR_PORT_LEN);
+
+    char node_num_str[4] = {0};
+    sprintf(node_num_str, "%d:", nod_buf_len);
     memcpy(tmp_str, node_num_str, strlen(node_num_str) );
     tmp_str += strlen(node_num_str);
     dht_print("get nearest (%s) peers!\n", node_num_str);
 
-    int nod_buf_len = nearest_node_num * (NODE_STR_LEN+NODE_STR_IP_LEN+ NODE_STR_PORT_LEN);
+
     memcpy(tmp_str, nodes_buffer, nod_buf_len);
     tmp_str += nod_buf_len;
 
@@ -655,6 +722,15 @@ void handle_on_find_node(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
     memcpy(m->buf, rsp_str, m->buf_len);
 
     pthread_mutex_lock(&q_mgr.snd_q.mutex);
+    if (q_mgr.snd_q.msg_cnt >= MAX_MSG_QUEUE_SIZE)
+    {
+        free(m);
+        m = NULL;
+        dht_print("[warning] snd_q is full\n");
+        pthread_mutex_unlock(&q_mgr.snd_q.mutex);
+        pthread_cond_signal(&q_mgr.cond);
+        return;
+    }
     list_add_tail(&q_mgr.snd_q.q.node, &m->node);
     q_mgr.snd_q.msg_cnt += 1;
     pthread_mutex_unlock(&q_mgr.snd_q.mutex);
@@ -769,13 +845,15 @@ void handle_on_get_peer(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
 
         nearest_node_num ++;
     }
-    char node_num_str[2] = {0};
-    sprintf(node_num_str, "%d:", nearest_node_num);
+    int nod_buf_len = nearest_node_num * (NODE_STR_LEN+NODE_STR_IP_LEN+ NODE_STR_PORT_LEN);
+
+    char node_num_str[4] = {0};
+    sprintf(node_num_str, "%d:", nod_buf_len);
     dht_print("get nearest (%s) peers!\n", node_num_str);
     memcpy(tmp_str, node_num_str, strlen(node_num_str) );
     tmp_str += strlen(node_num_str);
 
-    int nod_buf_len = nearest_node_num * (NODE_STR_LEN+NODE_STR_IP_LEN+ NODE_STR_PORT_LEN);
+
     memcpy(tmp_str, nodes_buffer, nod_buf_len);
     tmp_str += nod_buf_len;
 
@@ -801,6 +879,17 @@ void handle_on_get_peer(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
     memcpy(m->buf, rsp_str, m->buf_len);
 
     pthread_mutex_lock(&q_mgr.snd_q.mutex);
+
+    if (q_mgr.snd_q.msg_cnt >= MAX_MSG_QUEUE_SIZE)
+    {
+        free(m);
+        m = NULL;
+        dht_print("[warning] snd_q is full\n");
+        pthread_mutex_unlock(&q_mgr.snd_q.mutex);
+        pthread_cond_signal(&q_mgr.cond);
+        return;
+    }
+
     list_add_tail(&q_mgr.snd_q.q.node, &m->node);
     q_mgr.snd_q.msg_cnt += 1;
     pthread_mutex_unlock(&q_mgr.snd_q.mutex);
@@ -931,6 +1020,7 @@ int handle_find_node_rsp(ben_dict_t *dict, node_t *node)
         temp += (NODE_STR_LEN+ NODE_STR_IP_LEN + NODE_STR_PORT_LEN);
     }
     //dht_print("insert (%d) record to memory!\n now save to file\n", i);
+    if (node_num > 0)
     save_route_tbl_to_file(node);
     return 0;
 
@@ -1666,7 +1756,7 @@ void _send_first_msg(node_t*nod)
         q_mgr.snd_q.msg_cnt -= 1;
         char out[21] ={0};
         inet_bin_to_string(m->addr.sin_addr.S_un.S_addr, out);
-        //dht_print("send one msg to ==============(%s)=====, snd q len (%d)",out, q_mgr.snd_q.msg_cnt);
+        //dht_print("send one msg to ==============(%s)=====, snd q len (%d)\n",out, q_mgr.snd_q.msg_cnt);
 
         free(m);
         m = NULL;
@@ -1808,8 +1898,8 @@ void find_neighbor(node_t*node)
         //remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
         find_node(&remote_addr,node->node_id, node->node_id);
     }
-    refresh_route(node, Y_TYPE_FIND_NODE);
-    //refresh_route(node, Y_TYPE_PING);
+    //refresh_route(node, Y_TYPE_FIND_NODE);
+    refresh_route(node, Y_TYPE_PING);
 }
 /**
 * timer for refresh route table
@@ -1894,7 +1984,7 @@ void *process_rcv_msg_thread(void*arg)
             pthread_mutex_unlock(&q_mgr.rcv_q.mutex);
             continue;
         }
-        if (rsp_type != Y_TYPE_PING_RSP && rsp_type != Y_TYPE_FIND_NODE_RSP)
+        //if (rsp_type != Y_TYPE_PING_RSP && rsp_type != Y_TYPE_FIND_NODE_RSP)
         dht_print("handle rcv msg : type -> %s\n", type_desc[rsp_type]);
         switch(rsp_type)
         {
@@ -1903,6 +1993,7 @@ void *process_rcv_msg_thread(void*arg)
             break;
         case Y_TYPE_PING_RSP:
             handle_ping_rsp(&dict, nod);
+            dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
             break;
         case Y_TYPE_FIND_NODE:
             handle_on_find_node(&rcv_frm_addr, &dict, nod);
@@ -1941,7 +2032,6 @@ void *process_rcv_msg_thread(void*arg)
 */
 void* net_thread(void*arg)
 {
-
     node_t *nod = (node_t*)arg;
     while(true)
     {
@@ -1986,6 +2076,7 @@ int main()
         return -1;
     }
     init_route_table(&node);
+    g_req_id = 0;
     //worker(&node);
     // update route table by ping node in route table
 

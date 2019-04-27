@@ -6,8 +6,11 @@
 #include "dht_spider.h"
 #include "bt_parser.h"
 #include <stdarg.h>
+#include "hash_tbl.h"
 
 u_16 g_req_id;
+hash_tbl tmp, *timer_map = &tmp;
+unsigned int g_timer_id;
 
 extern stack_t g_stack;
 extern contex_stack_t g_ctx_stack;
@@ -24,6 +27,10 @@ int save_route_tbl_to_file(node_t* node);
 int find_prop_node(bucket_tree_node_t *bkt_tree, bucket_tree_node_t **ret, u_8 *node_str);
 pthread_spinlock_t spin_lock;
 char print_buff[1000]={0};
+
+//hash_map timer_map;
+//hash_map *t_map = &timer_map;
+
 void dht_print(const char* fmt, ...)
 {
     pthread_spin_lock(&spin_lock);
@@ -46,7 +53,7 @@ void print_node_str(u_8 *str, int len)
     pthread_spin_lock(&spin_lock);
     for(int i = 0; i < len; ++i)
     {
-        printf("%hhu|", str[i]);
+        printf("%hu|", str[i]);
     }
     printf("\n");
      pthread_spin_unlock(&spin_lock);
@@ -525,7 +532,7 @@ void inet_bin_to_string(u_32 ip, char output[])
     for (int i = 0; i < 4; ++i)
     {
         memset(buf, 0, 4);
-        sprintf(buf, "%hhu", tmp[i]);
+        sprintf(buf, "%hu", tmp[i]);
         strcat(output, buf);
         if (i != 3)
             strcat(output, ".");
@@ -1907,12 +1914,13 @@ void find_neighbor(node_t*node)
 void *timer_thread(void*arg)
 {
     //Sleep(5000);
+    unsigned long long tick = 0;
     node_t *nod = (node_t*)arg;
     int i = 0;
     while(true)
     {
         //dht_print("re-init (%d) time\n", ++i);
-        sockaddr_in remote_addr;
+        /*sockaddr_in remote_addr;
         remote_addr.sin_family = AF_INET;
         u_16 x_port ;
         u_8* x_low = (u_8*)&x_port;
@@ -1925,20 +1933,23 @@ void *timer_thread(void*arg)
         *y_ip = 87;
         *(y_ip+1) = 98;
         *(y_ip+2) = 162;
-        *(y_ip+3) = 88;
+        *(y_ip+3) = 88;*/
         //remote_addr.sin_addr.S_un.S_addr = _ip;// (inet_addr("87.98.162.88"));
         //int ret = find_node(nod->recv_socket,&remote_addr,nod->node_id, nod->node_id);
         //int ret = ping_node(&remote_addr,nod->node_id);
-        find_neighbor(nod);
-        Sleep(60000);
+        //find_neighbor(nod);
+
+
+        ++ tick;
+        Sleep(1000);
 
     }
 }
 
 /**
-* process received msg in rcv_q
+* process msg in msg que
 */
-void *process_rcv_msg_thread(void*arg)
+void *msg_schedule_thread(void*arg)
 {
     sockaddr_in rcv_frm_addr;
     node_t *nod = (node_t*)arg;
@@ -2064,8 +2075,36 @@ void* net_thread(void*arg)
     }
 }
 
+void init_timer_map(hash_tbl *m)
+{
+    map_init(m, int_hash, int_equal_f, 1<<8, (1<<8) -1 );
+}
 
-int main()
+void period_ping(void*data)
+{
+    node_t *node = (node_t*)data;
+    refresh_route(node, Y_TYPE_PING);
+}
+
+void init_ping_timer(node_t*node)
+{
+    timer_arg_t *ta = (timer_arg_t*)malloc(sizeof(timer_arg_t));
+    if (NULL == ta)
+    {
+        dht_print("[ERROR] malloc err\n");
+        return;
+    }
+    ta->data = node;
+    ta->f = period_ping;//(node, Y_TYPE_PING);
+    ta->timer_id = g_timer_id ++;
+
+    map_entry e = {0};
+    e.key = (void*)(&ta->timer_id);
+    e.val = (void*)ta;
+    map_put(timer_map, &e);
+}
+
+int mainnnn()
 {
     dht_print("ok dht spider\n");
     node_t node = {0};
@@ -2081,6 +2120,8 @@ int main()
     // update route table by ping node in route table
 
     // receive msg from other node.
+    g_timer_id = 0;
+    init_ping_timer(&node);
 
     pthread_spin_init(&spin_lock, PTHREAD_PROCESS_PRIVATE);
 
@@ -2100,8 +2141,8 @@ int main()
 
     ret = pthread_create(&t1, NULL, timer_thread, (void*)&node);
     dht_print("create timer_thread thread ret (%d)\n", ret);
-    ret = pthread_create(&t2, NULL, process_rcv_msg_thread, (void*)&node);
-    dht_print("create process_rcv_msg_thread ret (%d)\n", ret);
+    ret = pthread_create(&t2, NULL, msg_schedule_thread, (void*)&node);
+    dht_print("create msg_schedule_thread ret (%d)\n", ret);
     ret = pthread_create(&t3, NULL, net_thread, (void*)&node);
     dht_print("create net_thread ret (%d)\n", ret);
 

@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include "hash_map.h"
+#include "hash_tbl.h"
 
 /* MurmurHash2, by Austin Appleby
  * Note - This code makes a few assumptions about how your machine behaves -
@@ -62,21 +62,46 @@ unsigned int str_hash(void*key)
     return murmur_hash(key, 20);
 }
 
+/* Thomas Wang's 32 bit Mix Function */
+unsigned int dictIntHashFunction(unsigned int key)
+{
+    key += ~(key << 15);
+    key ^=  (key >> 10);
+    key +=  (key << 3);
+    key ^=  (key >> 6);
+    key += ~(key << 11);
+    key ^=  (key >> 16);
+    return key;
+}
+
+unsigned int int_hash(void*key)
+{
+    unsigned int k = *(unsigned int*)key;
+    return dictIntHashFunction(k);
+}
+int int_equal_f(void*k1, void*k2)
+{
+    unsigned int key1 = *(unsigned int*)k1;
+    unsigned int key2 = *(unsigned int*)k2;
+    return (key1 == key2);
+}
 int str_equal_f(void*k1, void*k2)
 {
     return memcmp(k1, k2, 20);
 }
-void map_init(hash_map *m, hash_Fn hash_fn, equal_Fn equal_fn, int bucket_size, unsigned int _mask)
+void map_init(hash_tbl *m, hash_Fn hash_fn, equal_Fn equal_fn, int bucket_size, unsigned int _mask)
 {
-    memset(m, 0, sizeof(hash_map) );
+    memset(m, 0, sizeof(hash_tbl) );
     m->bucket = (map_entry **) malloc(bucket_size * sizeof(map_entry*) );
     memset(m->bucket, 0, bucket_size * sizeof(map_entry*) );
     m->equalf = equal_fn;
     m->hashf = hash_fn;
     m->mask = _mask;
+    m->cur = -1;
+    m->size = bucket_size;
 }
 
-int map_put(hash_map *m, map_entry *entry)
+int map_put(hash_tbl *m, map_entry *entry)
 {
     unsigned int hash = m->hashf(entry->key);
     int pos = hash & m->mask;
@@ -98,7 +123,7 @@ int map_put(hash_map *m, map_entry *entry)
     return 0;
 }
 
-map_entry * map_get(hash_map *m, void*key)
+map_entry * map_get(hash_tbl *m, void*key)
 {
     unsigned int hash = m->hashf(key);
     int pos = hash & m->mask;
@@ -117,9 +142,9 @@ map_entry * map_get(hash_map *m, void*key)
     return NULL;
 }
 
-int maintest()
+int main()
 {
-    hash_map _map, *m = &_map;
+    hash_tbl _map, *m = &_map;
     map_init(m, str_hash, str_equal_f, 1<<16, (1<<16) -1 );
     size_t str_len = 20;
 
@@ -145,5 +170,12 @@ int maintest()
         {
             printf("get a key: %s -> val: %d\n", key, *(int*)(f->val));
         }
+    }
+
+    printf("\n================================================\n");
+    map_entry *e =  NULL;
+    map_for_each(m, e)
+    {
+        printf("map_for_each key: %s -> val:%d\n", (char*)e->key, *(int*)e->val );
     }
 }

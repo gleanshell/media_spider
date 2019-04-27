@@ -47,6 +47,12 @@ enum BUCKET_STATUS
     NOT_USE = 0,
     IN_USE
 };
+enum MSG_CMD
+{
+    TIMEOUT_MSG = 1,
+    SEND_MSG,
+    RECV_MSG
+};
 typedef struct bucket
 {
     unsigned char neibor_nodes[BUCKET_SIZE][NODE_STR_LEN];
@@ -111,12 +117,22 @@ enum
 
 };
 
+typedef struct timer_arg
+{
+    int timer_id;
+    int interval;// second
+    void*data;
+    void (*f)(void*);
+} timer_arg_t;
+
 typedef struct msg
 {
     time_t t;
     char buf[500];
     int buf_len;
     sockaddr_in addr;
+    int timer_id;
+    MSG_CMD msg_type;
     list_head_t node;
 }msg_t;
 

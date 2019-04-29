@@ -25,7 +25,7 @@ typedef struct hash_tbl
 void map_init(hash_tbl *m, hash_Fn hash_fn, equal_Fn equal_fn, int bucket_size, unsigned int _mask);
 int map_put(hash_tbl *m, map_entry*e);
 map_entry* map_get(hash_tbl *m, void *key);
-int map_del(hash_tbl *m, void*key);
+map_entry* map_del(hash_tbl *m, void*key);
 
 static map_entry *get_next_collision(hash_tbl *m)
 {
@@ -48,7 +48,7 @@ static void map_for_each1(hash_tbl *m, map_entry *e)
     }
 }
 
-#define map_for_each(map, entry) for (m->cur = -1,e = get_next_collision(m);(e != NULL) && (m->cur < m->size); (e = e->next),(e == NULL ? (e = get_next_collision(m)):e=e ))
+#define map_for_each(m, e) for (m->cur = -1,e = get_next_collision(m);(e != NULL) && (m->cur < m->size); (e = e->next),(e == NULL ? (e = get_next_collision(m)):e=e ))
 
 unsigned int int_hash(void*key);
 int int_equal_f(void*k1, void*k2);

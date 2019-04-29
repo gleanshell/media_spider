@@ -9,7 +9,7 @@
 #include "hash_tbl.h"
 
 u_16 g_req_id;
-hash_tbl tmp, *timer_map = &tmp;
+hash_tbl tmp_map, *timer_map = &tmp_map;
 unsigned int g_timer_id;
 
 extern stack_t g_stack;
@@ -158,13 +158,6 @@ int cmp_node_str(unsigned char * str1, unsigned char *str2)
     return 0;
 }
 
-void update_bucket_update_time(bucket_t*bucket)
-{
-    time_t t ;
-    time(&t);
-    bucket->update_time = t;
-}
-
 int ping_node(sockaddr_in* addr, unsigned char* self_node_id)
 {
     //d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe
@@ -212,6 +205,7 @@ int ping_node(sockaddr_in* addr, unsigned char* self_node_id)
         return ERR;
     }
     memset(m, 0, sizeof(msg_t));
+    m->msg_type = SEND_MSG;
     m->addr = *addr;
     m->buf_len = (int)(tmp_str - ping_str_start);
     memcpy(m->buf, ping_str_start, m->buf_len);
@@ -282,6 +276,7 @@ int find_node(sockaddr_in* addr, u_8 * id, u_8 *tgt)
     //sendto(s,(char *)snd_str, send_len, 0,(sockaddr*)addr, sizeof(struct sockaddr));
     //dht_print("send find node msg(len:%d): %s\n", send_len, snd_str);
     msg_t *m = (msg_t*)malloc(sizeof(msg_t));
+    m->msg_type = SEND_MSG;
     m->addr = *addr;
     m->buf_len = send_len;//strlen("d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe");
     memcpy(m->buf, snd_str, m->buf_len);
@@ -305,30 +300,6 @@ int find_node(sockaddr_in* addr, u_8 * id, u_8 *tgt)
     //pthread_cond_signal(&q_mgr.snd_q.cond);
 
 
-    return OK;
-}
-
-int announce_node()
-{
-    return OK;
-}
-/** rsp other node query */
-int on_ping_node()
-{
-    return OK;
-}
-
-int on_query_node()
-{
-    return OK;
-}
-int on_find_node()
-{
-    return OK;
-}
-
-int on_announce_node()
-{
     return OK;
 }
 
@@ -1046,6 +1017,7 @@ int rcv_msg(SOCKET s, node_t*node)
     {
         //dht_print("rcv msg frm-----(%s)---------,len(%d).\n",out, ret);
         msg_t *m = (msg_t*)malloc(sizeof(msg_t));
+        m->msg_type = RECV_MSG;
         m->addr = in_add;
         m->buf_len = ret;
         memcpy(m->buf, buffer, ret);
@@ -1763,7 +1735,7 @@ void _send_first_msg(node_t*nod)
         q_mgr.snd_q.msg_cnt -= 1;
         char out[21] ={0};
         inet_bin_to_string(m->addr.sin_addr.S_un.S_addr, out);
-        //dht_print("send one msg to ==============(%s)=====, snd q len (%d)\n",out, q_mgr.snd_q.msg_cnt);
+        dht_print("send one msg {%s} len {%d} to =====(%s)=====, snd q len (%d)\n",m->buf, m->buf_len,out, q_mgr.snd_q.msg_cnt);
 
         free(m);
         m = NULL;
@@ -1774,14 +1746,14 @@ void _send_first_msg(node_t*nod)
 /**
 *
 */
-int tree_node_to_buffer(node_t *node, u_8 *buffer)
+int tree_node_to_buffer(node_t *node, route_and_peer_addr_in_mem_t *buffer)
 {
     if (NULL == buffer)
     {
         dht_print("malloc buf err\n");
         return -1;
     }
-    u_8*buf = buffer;
+    route_and_peer_addr_in_mem_t *buf = buffer;
 
     tree_stack_t t_stack;
     tree_stack_t *t=&t_stack;
@@ -1808,16 +1780,11 @@ int tree_node_to_buffer(node_t *node, u_8 *buffer)
             {
                 if (tmp->peer_nodes[i].status == IN_USE)
                 {
-                    memcpy(buf, tmp->peer_nodes[i].node_str, NODE_STR_LEN);;
-                    buf += NODE_STR_LEN;
-                    memcpy(buf, tmp->peer_nodes[i].node_ip, NODE_STR_IP_LEN);
-                    buf += NODE_STR_IP_LEN;
-                    memcpy(buf, tmp->peer_nodes[i].node_port, NODE_STR_PORT_LEN);
-                    buf += NODE_STR_PORT_LEN;
-                    //char _ip_out [20] = {0};
-                    //inet_bin_to_string(tmp->peer_nodes[i].node_ip, _ip_out);
-                   // u_16 _port = *(u_16*)(tmp->peer_nodes[i].node_port);
-                    //_port = dht_ntohs(tmp->peer_nodes[i].node_port);
+                    memcpy(buf->node_str, tmp->peer_nodes[i].node_str, NODE_STR_LEN);
+                    memcpy(buf->node_ip, tmp->peer_nodes[i].node_ip, NODE_STR_IP_LEN);
+                    memcpy(buf->node_port, tmp->peer_nodes[i].node_port, NODE_STR_PORT_LEN);
+                    buf->peer_addr_in_mem = &tmp->peer_nodes[i];
+
                     u_32 _ip =*(u_32*)tmp->peer_nodes[i].node_ip;
                     //dht_print("buffer ip: %hhu.%hhu.%hhu.%hhu, port :%hu\n ",_ip[0], _ip[1], _ip[2], _ip[3] , _port);
 
@@ -1845,7 +1812,7 @@ int tree_node_to_buffer(node_t *node, u_8 *buffer)
 void refresh_route(node_t *node, int type)
 {
     int route_num = node->route_num;
-    u_8 *buffer = (u_8*)malloc((NODE_STR_LEN + NODE_STR_IP_LEN + NODE_STR_PORT_LEN) * route_num);
+    route_and_peer_addr_in_mem_t *buffer = (route_and_peer_addr_in_mem_t*)malloc(sizeof(route_and_peer_addr_in_mem_t) * route_num);
     if (NULL == buffer)
     {
         dht_print("malloc buf err\n");
@@ -1860,14 +1827,13 @@ void refresh_route(node_t *node, int type)
     remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
 
 
-    u_8 *tmp = buffer;
+    route_and_peer_addr_in_mem_t *tmp = buffer;
     for (int i = 0; i < route_num; ++i)
     {
-        tmp += NODE_STR_LEN;
-        u_32* ip =(u_32*)(tmp);
+        u_32* ip =(u_32*)(buffer[i].node_ip);
         remote_addr.sin_addr.S_un.S_addr = *ip;
-        tmp += NODE_STR_IP_LEN;
-        u_16 * port = (u_16*)(tmp);
+
+        u_16 * port = (u_16*)(buffer[i].node_port);
         remote_addr.sin_port = *port;
 
         if (type == Y_TYPE_PING)
@@ -1878,8 +1844,6 @@ void refresh_route(node_t *node, int type)
         {
             ret = find_node(&remote_addr,node->node_id, node->node_id);
         }
-        tmp += NODE_STR_PORT_LEN;
-
     }
 
     free(buffer);
@@ -1908,6 +1872,74 @@ void find_neighbor(node_t*node)
     //refresh_route(node, Y_TYPE_FIND_NODE);
     refresh_route(node, Y_TYPE_PING);
 }
+
+char tmp_buff[500] = {0};
+int tmp_buff_len = 0;
+u_32 pos = 0;
+sockaddr_in rcv_frm_addr;
+
+void handle_rcv_msg(msg_t *m, list_head_t *first, node_t *nod)
+{
+    memset(&dict, 0, sizeof(ben_dict_t));
+    pos = 0;
+    //dht_print("[info] buf:{%s} buflen{%d}\n", m->buf, m->buf_len);
+    memset(tmp_buff, 0, 500);
+    memcpy(tmp_buff, m->buf, m->buf_len);
+    tmp_buff_len = m->buf_len;
+    ben_coding(m->buf, m->buf_len, &pos);
+
+    rcv_frm_addr = m->addr;
+
+    list_del(first);
+    q_mgr.rcv_q.msg_cnt -= 1;
+
+    free(m);
+    m = NULL;
+
+    int rsp_type = -1;
+    get_rsp_msg_type(&dict, &rsp_type);
+    if (-1 == rsp_type)
+    {
+        dht_print("get rsp type failed [info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
+        return;
+    }
+    //if (rsp_type != Y_TYPE_PING_RSP && rsp_type != Y_TYPE_FIND_NODE_RSP)
+    dht_print("handle rcv msg : type -> %s\n", type_desc[rsp_type]);
+    switch(rsp_type)
+    {
+    case Y_TYPE_PING:
+        handle_on_ping(&rcv_frm_addr, &dict, nod);
+        break;
+    case Y_TYPE_PING_RSP:
+        handle_ping_rsp(&dict, nod);
+        dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
+        break;
+    case Y_TYPE_FIND_NODE:
+        handle_on_find_node(&rcv_frm_addr, &dict, nod);
+        //dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
+        break;
+    case Y_TYPE_FIND_NODE_RSP:
+        handle_find_node_rsp(&dict, nod);
+        break;
+    case Y_TYPE_GET_PEER:
+        handle_on_get_peer(&rcv_frm_addr, &dict, nod);
+        //dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
+        break;
+    case Y_TYPE_GET_PEER_RSP:
+        //dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
+        break;
+    case Y_TYPE_ANNOUNCE_PEER:
+    case Y_TYPE_ANNOUNCE_PEER_RSP:
+        dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
+        break;
+
+    default:
+        dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
+        break;
+
+    }
+}
+
 /**
 * timer for refresh route table
 */
@@ -1938,11 +1970,42 @@ void *timer_thread(void*arg)
         //int ret = find_node(nod->recv_socket,&remote_addr,nod->node_id, nod->node_id);
         //int ret = ping_node(&remote_addr,nod->node_id);
         //find_neighbor(nod);
+        map_entry *iter = NULL;
+        map_for_each(timer_map, iter)
+        {
+            timer_arg_t *ta = (timer_arg_t*)iter->val;
+            if (tick % ta->interval != 0)
+            {
+                continue;
+            }
+            msg_t *m = (msg_t*)malloc(sizeof(msg_t));
+            if (NULL == m)
+            {
+                dht_print("[FATAL] can't malloc mem\n");
+                break;
+            }
+            m->timer_id = ta->timer_id;
+            m->msg_type = TIMEOUT_MSG;
 
+            dht_print("[DEBUG] a timer\n");
+            pthread_mutex_lock(&q_mgr.snd_q.mutex);
+            if (q_mgr.snd_q.msg_cnt >= MAX_MSG_QUEUE_SIZE)
+            {
+                pthread_mutex_unlock(&q_mgr.snd_q.mutex);
+                pthread_cond_signal(&q_mgr.cond);
+                free(m);
+                m = NULL;
+                dht_print("[WARNING] sending queue is full\n");
+                break;
+            }
+            list_add_tail(&q_mgr.snd_q.q.node, &m->node);
+            q_mgr.snd_q.msg_cnt += 1;
+            pthread_mutex_unlock(&q_mgr.snd_q.mutex);
+            pthread_cond_signal(&q_mgr.cond);
+        }
 
         ++ tick;
         Sleep(1000);
-
     }
 }
 
@@ -1951,86 +2014,44 @@ void *timer_thread(void*arg)
 */
 void *msg_schedule_thread(void*arg)
 {
-    sockaddr_in rcv_frm_addr;
     node_t *nod = (node_t*)arg;
-    char tmp_buff[500] = {0};
-    int tmp_buff_len = 0;
+    map_entry *x = NULL;
+    timer_arg_t * y = NULL;
     while(true)
     {
         pthread_mutex_lock(&q_mgr.rcv_q.mutex);
 
         while(q_mgr.rcv_q.msg_cnt <= 0)
         {
-            //dht_print("rcv msg q is empty\n");
             pthread_cond_wait(&q_mgr.rcv_q.cond, &q_mgr.rcv_q.mutex);
         }
-        memset(&dict, 0, sizeof(ben_dict_t));
+
         list_head_t *first = q_mgr.rcv_q.q.node.next;
         msg_t *m = container_of(msg_t, node, first);
-        u_32 pos = 0;
-
-        //dht_print("[info] buf:{%s} buflen{%d}\n", m->buf, m->buf_len);
-        memset(tmp_buff, 0, 500);
-        memcpy(tmp_buff, m->buf, m->buf_len);
-        tmp_buff_len = m->buf_len;
-        ben_coding(m->buf, m->buf_len, &pos);
-        //if (m->buf_len == 56)
-        //print_result(&g_stack, &g_ctx_stack);
-
-        rcv_frm_addr = m->addr;
-
-        list_del(first);
-        q_mgr.rcv_q.msg_cnt -= 1;
-
-        free(m);
-        m = NULL;
-
-
-        int rsp_type = -1;
-        get_rsp_msg_type(&dict, &rsp_type);
-        if (-1 == rsp_type)
+        x = NULL;
+        y = NULL;
+        switch(m->msg_type)
         {
-            //dht_print("get rsp type failed.\n");
-            dht_print("get rsp type failed [info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
-            pthread_mutex_unlock(&q_mgr.rcv_q.mutex);
-            continue;
-        }
-        //if (rsp_type != Y_TYPE_PING_RSP && rsp_type != Y_TYPE_FIND_NODE_RSP)
-        dht_print("handle rcv msg : type -> %s\n", type_desc[rsp_type]);
-        switch(rsp_type)
-        {
-        case Y_TYPE_PING:
-            handle_on_ping(&rcv_frm_addr, &dict, nod);
+        case TIMEOUT_MSG:
+            x = map_get(timer_map, (void*)&m->timer_id);
+            if (NULL == x)
+            {
+                dht_print("[FATAL] should not happen!\n");
+                break;
+            }
+            y = (timer_arg_t*)x->val;
+            y->f(y->data);
+            dht_print("sending a timer msg\n");
             break;
-        case Y_TYPE_PING_RSP:
-            handle_ping_rsp(&dict, nod);
-            dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
+        case SEND_MSG:
+            handle_rcv_msg(m, first, nod);
             break;
-        case Y_TYPE_FIND_NODE:
-            handle_on_find_node(&rcv_frm_addr, &dict, nod);
-            //dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
+        case RECV_MSG:
+            handle_rcv_msg(m, first, nod);
             break;
-        case Y_TYPE_FIND_NODE_RSP:
-            handle_find_node_rsp(&dict, nod);
-            break;
-        case Y_TYPE_GET_PEER:
-            handle_on_get_peer(&rcv_frm_addr, &dict, nod);
-            //dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
-            break;
-        case Y_TYPE_GET_PEER_RSP:
-            //dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
-            break;
-        case Y_TYPE_ANNOUNCE_PEER:
-        case Y_TYPE_ANNOUNCE_PEER_RSP:
-            dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
-            break;
-
         default:
-            dht_print("[info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
             break;
-
         }
-
         pthread_mutex_unlock(&q_mgr.rcv_q.mutex);
     }
 
@@ -2077,7 +2098,7 @@ void* net_thread(void*arg)
 
 void init_timer_map(hash_tbl *m)
 {
-    map_init(m, int_hash, int_equal_f, 1<<8, (1<<8) -1 );
+    map_init(m, int_hash, int_equal_f, 1<<16, (1<<16) -1 );
 }
 
 void period_ping(void*data)
@@ -2097,6 +2118,7 @@ void init_ping_timer(node_t*node)
     ta->data = node;
     ta->f = period_ping;//(node, Y_TYPE_PING);
     ta->timer_id = g_timer_id ++;
+    ta->interval = 30;
 
     map_entry e = {0};
     e.key = (void*)(&ta->timer_id);
@@ -2104,7 +2126,7 @@ void init_ping_timer(node_t*node)
     map_put(timer_map, &e);
 }
 
-int mainnnn()
+int main()
 {
     dht_print("ok dht spider\n");
     node_t node = {0};
@@ -2120,6 +2142,7 @@ int mainnnn()
     // update route table by ping node in route table
 
     // receive msg from other node.
+    init_timer_map(timer_map);
     g_timer_id = 0;
     init_ping_timer(&node);
 

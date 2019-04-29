@@ -53,16 +53,6 @@ enum MSG_CMD
     SEND_MSG,
     RECV_MSG
 };
-typedef struct bucket
-{
-    unsigned char neibor_nodes[BUCKET_SIZE][NODE_STR_LEN];
-    time_t update_time;
-    int range_start;
-    int range_end;
-    int status;
-    int nodes_num;
-}bucket_t;
-
 
 typedef struct peer_info
 {
@@ -153,10 +143,17 @@ typedef struct msg_q_mgr
     pthread_cond_t cond;
 }msg_q_mgr_t;
 
-typedef struct msg_ctx
+typedef struct route_and_peer_addr_in_mem
 {
-    u_8 trans_id[2];
-    int op_type;
+    u_8 node_str[NODE_STR_LEN];
+    u_8 node_ip[NODE_STR_IP_LEN];
+    u_8 node_port[NODE_STR_PORT_LEN];
+    peer_info_t *peer_addr_in_mem;
+} route_and_peer_addr_in_mem_t;
 
-
-}msg_ctx_t;
+typedef struct refesh_route_ctx
+{
+    u_32 t_id;
+    int op_type;//ping , get peer and so on
+    route_and_peer_addr_in_mem_t *route_info;
+}refesh_route_ctx;

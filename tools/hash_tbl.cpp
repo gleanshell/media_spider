@@ -142,7 +142,28 @@ map_entry * map_get(hash_tbl *m, void*key)
     return NULL;
 }
 
-int main()
+map_entry * map_del(hash_tbl *m, void*key)
+{
+    unsigned int hash = m->hashf(key);
+    int pos = hash & m->mask;
+    map_entry *e = m->bucket[pos];
+    map_entry **prev = &m->bucket[pos];
+    while(e)
+    {
+        if (0 == m->equalf(e->key, key))
+        {
+            *prev = e->next;
+            m->used -= 1;
+            return e;
+        }
+        *prev = e;
+        e = e->next;
+    }
+    return NULL;
+}
+
+
+int maintest()
 {
     hash_tbl _map, *m = &_map;
     map_init(m, str_hash, str_equal_f, 1<<16, (1<<16) -1 );
@@ -177,5 +198,34 @@ int main()
     map_for_each(m, e)
     {
         printf("map_for_each key: %s -> val:%d\n", (char*)e->key, *(int*)e->val );
+    }
+    printf("\n========================delete one ========================\n");
+
+    for (int j=0; j < 49; ++j)
+    {
+        void *key = malloc(str_len);
+        memset(key, 0, str_len);
+        sprintf((char*)key, "abcdefg-%d", j);
+
+        map_entry *f = map_del(m,key);
+        if (NULL != f)
+        {
+            printf("del a key: %s -> val: %d\n", key, *(int*)(f->val));
+            free(f->val);
+            f->val = NULL;
+
+            free(f->key);
+            f->key = NULL;
+
+            free(f);
+            f = NULL;
+        }
+    }
+
+    printf("-------------erro?-----------\n");
+    map_entry *e1 =  NULL;
+    map_for_each(m, e1)
+    {
+        printf("map_for_each key: %s -> val:%d\n", (char*)e1->key, *(int*)e1->val );
     }
 }

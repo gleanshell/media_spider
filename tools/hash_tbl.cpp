@@ -87,7 +87,7 @@ int int_equal_f(void*k1, void*k2)
 }
 int str_equal_f(void*k1, void*k2)
 {
-    return memcmp(k1, k2, 20);
+    return (0 == memcmp(k1, k2, 20));
 }
 void map_init(hash_tbl *m, hash_Fn hash_fn, equal_Fn equal_fn, int bucket_size, unsigned int _mask)
 {
@@ -131,7 +131,7 @@ map_entry * map_get(hash_tbl *m, void*key)
     int c = 0;
     while(e)
     {
-        if (0 == m->equalf(e->key, key))
+        if (m->equalf(e->key, key))
         {
             //printf("=====  c = (%d) ===", c);
             return e;
@@ -150,7 +150,7 @@ map_entry * map_del(hash_tbl *m, void*key)
     map_entry **prev = &m->bucket[pos];
     while(e)
     {
-        if (0 == m->equalf(e->key, key))
+        if (m->equalf(e->key, key))
         {
             *prev = e->next;
             m->used -= 1;

@@ -1735,7 +1735,7 @@ void _send_first_msg(node_t*nod)
         q_mgr.snd_q.msg_cnt -= 1;
         char out[21] ={0};
         inet_bin_to_string(m->addr.sin_addr.S_un.S_addr, out);
-        dht_print("send one msg {%s} len {%d} to =====(%s)=====, snd q len (%d)\n",m->buf, m->buf_len,out, q_mgr.snd_q.msg_cnt);
+        //dht_print("send one msg {%s} len {%d} to =====(%s)=====, snd q len (%d)\n",m->buf, m->buf_len,out, q_mgr.snd_q.msg_cnt);
 
         free(m);
         m = NULL;
@@ -1988,20 +1988,20 @@ void *timer_thread(void*arg)
             m->msg_type = TIMEOUT_MSG;
 
             dht_print("[DEBUG] a timer\n");
-            pthread_mutex_lock(&q_mgr.snd_q.mutex);
-            if (q_mgr.snd_q.msg_cnt >= MAX_MSG_QUEUE_SIZE)
+            pthread_mutex_lock(&q_mgr.rcv_q.mutex);
+            if (q_mgr.rcv_q.msg_cnt >= MAX_MSG_QUEUE_SIZE)
             {
-                pthread_mutex_unlock(&q_mgr.snd_q.mutex);
+                pthread_mutex_unlock(&q_mgr.rcv_q.mutex);
                 pthread_cond_signal(&q_mgr.cond);
                 free(m);
                 m = NULL;
                 dht_print("[WARNING] sending queue is full\n");
                 break;
             }
-            list_add_tail(&q_mgr.snd_q.q.node, &m->node);
-            q_mgr.snd_q.msg_cnt += 1;
-            pthread_mutex_unlock(&q_mgr.snd_q.mutex);
-            pthread_cond_signal(&q_mgr.cond);
+            list_add_tail(&q_mgr.rcv_q.q.node, &m->node);
+            q_mgr.rcv_q.msg_cnt += 1;
+            pthread_mutex_unlock(&q_mgr.rcv_q.mutex);
+            pthread_cond_signal(&q_mgr.rcv_q.cond);
         }
 
         ++ tick;
@@ -2042,6 +2042,12 @@ void *msg_schedule_thread(void*arg)
             y = (timer_arg_t*)x->val;
             y->f(y->data);
             dht_print("sending a timer msg\n");
+            list_del(first);
+            q_mgr.rcv_q.msg_cnt -= 1;
+
+            free(m);
+            m = NULL;
+
             break;
         case SEND_MSG:
             handle_rcv_msg(m, first, nod);
@@ -2118,7 +2124,7 @@ void init_ping_timer(node_t*node)
     ta->data = node;
     ta->f = period_ping;//(node, Y_TYPE_PING);
     ta->timer_id = g_timer_id ++;
-    ta->interval = 30;
+    ta->interval = 10;
 
     map_entry e = {0};
     e.key = (void*)(&ta->timer_id);

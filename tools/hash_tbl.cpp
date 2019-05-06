@@ -120,6 +120,7 @@ int map_put(hash_tbl *m, map_entry *entry)
     }
     en->next = m->bucket[pos];
     m->bucket[pos] = en;
+    m->used += 1;
     return 0;
 }
 

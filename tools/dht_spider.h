@@ -123,6 +123,7 @@ typedef struct msg
     sockaddr_in addr;
     int timer_id;
     MSG_CMD msg_type;
+    u_64 tid;
     list_head_t node;
 }msg_t;
 
@@ -151,9 +152,8 @@ typedef struct route_and_peer_addr_in_mem
     peer_info_t *peer_addr_in_mem;
 } route_and_peer_addr_in_mem_t;
 
-typedef struct refesh_route_ctx
+typedef struct refresh_route_ctx
 {
-    u_32 t_id;
     int op_type;//ping , get peer and so on
     route_and_peer_addr_in_mem_t *route_info;
-}refesh_route_ctx;
+}refresh_route_ctx_t;

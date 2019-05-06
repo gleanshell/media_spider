@@ -10,6 +10,7 @@
 
 u_16 g_req_id;
 hash_tbl tmp_map, *timer_map = &tmp_map;
+hash_tbl tmp_map2, *msg_ctx_map = &tmp_map2;
 unsigned int g_timer_id;
 
 extern stack_t g_stack;
@@ -43,9 +44,32 @@ void dht_print(const char* fmt, ...)
     pthread_spin_unlock(&spin_lock);
 }
 
-void dht_print1(const char* fmt, ...)
+int __add_to_msg_queue(msg_t* m, msg_q_mgr_t *q_mgr)
 {
+    pthread_mutex_lock(&q_mgr->snd_q.mutex);
 
+    if (q_mgr->snd_q.msg_cnt >= MAX_MSG_QUEUE_SIZE)
+    {
+        //free(m);
+        //m = NULL;
+        dht_print("[warning] snd_q is full\n");
+        pthread_mutex_unlock(&q_mgr->snd_q.mutex);
+        pthread_cond_signal(&q_mgr->cond);
+        return ERR;
+    }
+
+    list_add_tail(&q_mgr->snd_q.q.node, &m->node);
+    q_mgr->snd_q.msg_cnt += 1;
+    pthread_mutex_unlock(&q_mgr->snd_q.mutex);
+    pthread_cond_signal(&q_mgr->cond);
+    return OK;
+}
+void __put_msg_ctx_map(hash_tbl *m, u_16 tid, refesh_route_ctx_t* msg_ctx)
+{
+    map_entry e = {0};
+    e.key = (void*)&tid;
+    e.val = (void*)msg_ctx;
+    map_put(m, &e);
 }
 
 void print_node_str(u_8 *str, int len)
@@ -158,7 +182,7 @@ int cmp_node_str(unsigned char * str1, unsigned char *str2)
     return 0;
 }
 
-int ping_node(sockaddr_in* addr, unsigned char* self_node_id)
+int ping_node(sockaddr_in* addr, unsigned char* self_node_id, route_and_peer_addr_in_mem_t *peer_addr)
 {
     //d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe
     char ping_str_start[100] = "d1:ad2:id20:";
@@ -208,26 +232,29 @@ int ping_node(sockaddr_in* addr, unsigned char* self_node_id)
     m->msg_type = SEND_MSG;
     m->addr = *addr;
     m->buf_len = (int)(tmp_str - ping_str_start);
+    m->tid = ping_tid;
     memcpy(m->buf, ping_str_start, m->buf_len);
     //dht_print("[debug] ping msg {%s} len is (%d)\n",m->buf , m->buf_len);
 
-    pthread_mutex_lock(&q_mgr.snd_q.mutex);
-
-    if (q_mgr.snd_q.msg_cnt >= MAX_MSG_QUEUE_SIZE)
+    int ret = __add_to_msg_queue(m, &q_mgr);
+    if (ret != OK)
     {
         free(m);
         m = NULL;
-        dht_print("[warning] snd_q is full\n");
-        pthread_mutex_unlock(&q_mgr.snd_q.mutex);
-        pthread_cond_signal(&q_mgr.cond);
         return ERR;
     }
 
-    list_add_tail(&q_mgr.snd_q.q.node, &m->node);
-    q_mgr.snd_q.msg_cnt += 1;
-    pthread_mutex_unlock(&q_mgr.snd_q.mutex);
-    pthread_cond_signal(&q_mgr.cond);
-    //pthread_cond_signal(&q_mgr.snd_q.cond);
+    refresh_route_ctx_t * ctx  = (refresh_route_ctx_t*)malloc(sizeof(refresh_route_ctx_t));
+    if (NULL == ctx)
+    {
+        free(m);
+        m = NULL;
+        dht_print("[FATAL] can not alloc mem\n");
+        return ERR;
+    }
+    ctx->op_type = Y_TYPE_PING;
+    ctx->route_info = peer_addr;
+    __put_msg_ctx_map(msg_ctx_map,ping_tid, ctx);
 
     return OK;
 }
@@ -1838,7 +1865,7 @@ void refresh_route(node_t *node, int type)
 
         if (type == Y_TYPE_PING)
         {
-            ret = ping_node(&remote_addr, node->node_id);
+            ret = ping_node(&remote_addr, node->node_id, buffer[i].peer_addr_in_mem);
         }
         else if(type == Y_TYPE_FIND_NODE)
         {
@@ -2102,6 +2129,34 @@ void* net_thread(void*arg)
     }
 }
 
+void init_msg_ctx_map(hash_tbl *m)
+{
+    map_init(m, int_hash, int_equal_f, 1 << 16, (1<<16) - 1);
+}
+
+void msg_timeout_handler(node_t*node, )
+{
+
+}
+
+void init_msg_timeout_timer(node_t*node)
+{
+    timer_arg_t *ta = (timer_arg_t*)malloc(sizeof(timer_arg_t));
+    if (NULL == ta)
+    {
+        dht_print("[ERROR] malloc err\n");
+        return;
+    }
+    ta->data = node;
+    ta->f = msg_timeout_handler;//(node, Y_TYPE_PING);
+    ta->timer_id = g_timer_id ++;
+    ta->interval = 10;
+
+    map_entry e = {0};
+    e.key = (void*)(&ta->timer_id);
+    e.val = (void*)ta;
+    map_put(timer_map, &e);
+}
 void init_timer_map(hash_tbl *m)
 {
     map_init(m, int_hash, int_equal_f, 1<<16, (1<<16) -1 );
@@ -2151,6 +2206,9 @@ int main()
     init_timer_map(timer_map);
     g_timer_id = 0;
     init_ping_timer(&node);
+
+    init_msg_ctx_map(msg_ctx_map);
+    init_msg_timeout_timer(&node);
 
     pthread_spin_init(&spin_lock, PTHREAD_PROCESS_PRIVATE);
 

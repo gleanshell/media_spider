@@ -83,7 +83,7 @@ int int_equal_f(void*k1, void*k2)
 {
     unsigned int key1 = *(unsigned int*)k1;
     unsigned int key2 = *(unsigned int*)k2;
-    return (key1 == key2);
+    return (key1 == key2 ? 1: 0);
 }
 int str_equal_f(void*k1, void*k2)
 {

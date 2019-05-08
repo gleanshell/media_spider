@@ -37,6 +37,9 @@ typedef unsigned char u_8;
 
 #endif // MAX_STACK_SIZE
 
+
+#define PEER_REFRESH_INTERVAL (6) //seconds
+#define PEER_DETECT_UNOK_PERIOD (5)
 enum OP_STATUS
 {
     OK = 0, ERR = -1
@@ -59,7 +62,8 @@ typedef struct peer_info
     u_8 node_str[NODE_STR_LEN];
     u_8 node_ip[NODE_STR_IP_LEN];
     u_8 node_port[NODE_STR_PORT_LEN];
-    unsigned __int64 update_time;
+    int refresh_count_down;
+    int refresh_times;
     int status;
 }peer_info_t;
 
@@ -152,8 +156,11 @@ typedef struct route_and_peer_addr_in_mem
     peer_info_t *peer_addr_in_mem;
 } route_and_peer_addr_in_mem_t;
 
+#define MSG_TIMEOUT_INTERVAL (30)
+#define MSG_TIMEOUT_TIMER_INTERVAL (1)
 typedef struct refresh_route_ctx
 {
     int op_type;//ping , get peer and so on
-    route_and_peer_addr_in_mem_t *route_info;
+    int timeout_sec;
+    peer_info_t *route_info;
 }refresh_route_ctx_t;

@@ -38,8 +38,8 @@ typedef unsigned char u_8;
 #endif // MAX_STACK_SIZE
 
 
-#define PEER_REFRESH_INTERVAL (6) //seconds
-#define PEER_DETECT_UNOK_PERIOD (5)
+#define PEER_REFRESH_INTERVAL (3) //seconds
+#define PEER_DETECT_UNOK_PERIOD (2)
 enum OP_STATUS
 {
     OK = 0, ERR = -1
@@ -156,7 +156,7 @@ typedef struct route_and_peer_addr_in_mem
     peer_info_t *peer_addr_in_mem;
 } route_and_peer_addr_in_mem_t;
 
-#define MSG_TIMEOUT_INTERVAL (30)
+#define MSG_TIMEOUT_INTERVAL (10)
 #define MSG_TIMEOUT_TIMER_INTERVAL (1)
 typedef struct refresh_route_ctx
 {

@@ -11,6 +11,7 @@
 u_32 g_req_id;
 hash_tbl tmp_map, *timer_map = &tmp_map;
 hash_tbl tmp_map2, *msg_ctx_map = &tmp_map2;
+hash_tbl htmp, *torrent_hash_map = &htmp;
 unsigned int g_timer_id;
 
 extern stack_t g_stack;
@@ -26,6 +27,7 @@ extern void print_result(stack_t *s, contex_stack_t *c);
 int insert_into_bucket_tree(node_t *node, bucket_tree_node_t **root,u_8 *node_str, u_8 *node_ip, u_8 *node_port, u_8 *self_node_id);
 int save_route_tbl_to_file(node_t* node);
 int find_prop_node(bucket_tree_node_t *bkt_tree, bucket_tree_node_t **ret, u_8 *node_str);
+void print_info_hash(char info_hash[], int info_hash_len);
 pthread_spinlock_t spin_lock;
 char print_buff[1000]={0};
 
@@ -763,6 +765,17 @@ void handle_on_find_node(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
 
 }
 
+void print_info_hash(char info_hash[], int info_hash_len)
+{
+    char hash_hex[50] ={0};
+
+    for (int i = 0 ; i < info_hash_len; ++i)
+    {
+        sprintf((char*)(&hash_hex[0] +i*2),  "%02x", (unsigned char)info_hash[i]);
+    }
+    dht_print("[info-hash] %s ,len (%u);info_hash_len (%d)\n ", hash_hex, strlen(hash_hex), info_hash_len);
+}
+
 void handle_on_get_peer(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
 {
     //printf("get a  get_peer req...\n");
@@ -819,13 +832,17 @@ void handle_on_get_peer(sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node)
         dht_print("[ERROR] not find key word! find peer id (%d), find peer tgt (%d), peer tid len (%d)\n", find_peer_id, find_peer_tgt, peer_tid_len);
         return;
     }
-    char hash_hex[50] ={0};
-
-    for (int i = 0 ; i < info_hash_len; ++i)
+    //print_info_hash(info_hash, info_hash_len);
+    if (info_hash_len != 20)
     {
-        sprintf((char*)(&hash_hex[0] +i*2),  "%02x", (unsigned char)info_hash[i]);
+        return;
     }
-    dht_print("[info-hash] %s ,len (%u);info_hash_len (%d)\n ", hash_hex, strlen(hash_hex), info_hash_len);
+    //save to local torrent info-hash map
+    map_entry en = {0};
+    en.key = (void*)malloc(info_hash_len);
+
+    map_put(torrent_hash_map, &en);
+
     //回复最接近的nodes= {"t":"aa", "y":"r", "r":{"id":"abcdefghij0123456789", "token":"aoeusnth","nodes": "def456..."}}
     //B编码=d1:rd2:id20:abcdefghij01234567895:nodes9:def456...5:token8:aoeusnthe1:t2:aa1:y1:re
     char rsp_str[500]="d1:rd2:id20:";
@@ -2200,6 +2217,11 @@ void* net_thread(void*arg)
     }
 }
 
+void init_torrent_hash_map(hash_tbl *m)
+{
+    map_init(m, str_hash, str_equal_f, 1 << 16, (1<<16) - 1);
+}
+
 void init_msg_ctx_map(hash_tbl *m)
 {
     map_init(m, int_hash, int_equal_f, 1 << 16, (1<<16) - 1);
@@ -2276,6 +2298,12 @@ void period_ping(void*data)
 {
     node_t *node = (node_t*)data;
     refresh_route(node, Y_TYPE_PING);
+    map_entry *e  = NULL;
+    map_for_each(torrent_hash_map, e)
+    {
+        print_info_hash((char*)e->key, 20);
+    }
+
 }
 
 void init_ping_timer(node_t*node)
@@ -2289,7 +2317,7 @@ void init_ping_timer(node_t*node)
     ta->data = node;
     ta->f = period_ping;//(node, Y_TYPE_PING);
     ta->timer_id = g_timer_id ++;
-    ta->interval = 60;
+    ta->interval = 20;
 
     map_entry e = {0};
     e.key = (void*)(&ta->timer_id);
@@ -2319,6 +2347,11 @@ int main()
 
     init_msg_ctx_map(msg_ctx_map);
     init_msg_timeout_timer(&node);
+
+    //info hash map
+
+    init_torrent_hash_map(torrent_hash_map);
+
 
     pthread_spin_init(&spin_lock, PTHREAD_PROCESS_PRIVATE);
 

@@ -89,7 +89,7 @@ int str_equal_f(void*k1, void*k2)
 {
     return (0 == memcmp(k1, k2, 20));
 }
-void map_init(hash_tbl *m, hash_Fn hash_fn, equal_Fn equal_fn, int bucket_size, unsigned int _mask)
+void map_init(hash_tbl *m, hash_Fn hash_fn, equal_Fn equal_fn, unsigned int bucket_size, unsigned int _mask)
 {
     memset(m, 0, sizeof(hash_tbl) );
     m->bucket = (map_entry **) malloc(bucket_size * sizeof(map_entry*) );

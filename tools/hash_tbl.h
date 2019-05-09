@@ -18,11 +18,11 @@ typedef struct hash_tbl
     unsigned int mask;
     int cur;
     int used;
-    int size;
+    unsigned int size;
 }hash_tbl;
 
 
-void map_init(hash_tbl *m, hash_Fn hash_fn, equal_Fn equal_fn, int bucket_size, unsigned int _mask);
+void map_init(hash_tbl *m, hash_Fn hash_fn, equal_Fn equal_fn, unsigned int bucket_size, unsigned int _mask);
 int map_put(hash_tbl *m, map_entry*e);
 map_entry* map_get(hash_tbl *m, void *key);
 map_entry* map_del(hash_tbl *m, void*key);
@@ -52,3 +52,6 @@ static void map_for_each1(hash_tbl *m, map_entry *e)
 
 unsigned int int_hash(void*key);
 int int_equal_f(void*k1, void*k2);
+
+unsigned int str_hash(void*key);
+int str_equal_f(void*k1, void*k2);

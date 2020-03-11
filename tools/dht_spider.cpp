@@ -9,6 +9,7 @@
 #include "hash_tbl.h"
 
 u_32 g_req_id;
+u_32 g_find_node_id;
 hash_tbl tmp_map, *timer_map = &tmp_map;
 hash_tbl tmp_map2, *msg_ctx_map = &tmp_map2;
 hash_tbl htmp, *torrent_hash_map = &htmp;
@@ -265,11 +266,7 @@ int ping_node(sockaddr_in* addr, unsigned char* self_node_id, peer_info_t *peer_
     ctx->op_type = Y_TYPE_PING;
     ctx->timeout_sec = MSG_TIMEOUT_INTERVAL;
     ctx->route_info = peer_addr;
-    if (0xbaadf00d == (long)peer_addr)
-    {
-        int x = 0;
-        int y = x +1;
-    }
+
     __put_msg_ctx_map(msg_ctx_map,ping_tid, ctx);
 
     return OK;
@@ -282,12 +279,12 @@ int query_node()
 /**
 * find node :the t value,start with f.
 */
-int find_node(sockaddr_in* addr, u_8 * id, u_8 *tgt)
+int find_node(sockaddr_in* addr, u_8 * id, u_8 *tgt,  peer_info_t *peer_addr)
 {
     //d1:ad2:id20:abcdefghij01234567896:target20:mnopqrstuvwxyz123456e1:q9:find_node1:t2:aa1:y1:qe
     char str1[] = "d1:ad2:id20:";
     char str2[] = "6:target20:";
-    char str3[] = "e1:q9:find_node1:t2:f";
+    char str3[] = "e1:q9:find_node1:t";
     tid +=1;
     char str4[] = "1:y1:qe";
 
@@ -309,12 +306,33 @@ int find_node(sockaddr_in* addr, u_8 * id, u_8 *tgt)
     memcpy(send_str, str3, strlen(str3));
     send_str += strlen(str3);
 
-    *send_str ='d';// tid ++;
-    send_str +=1;
+    //2:f";
+
+    u_32 find_node_tid = g_req_id ++;
+    char find_node_tid_str[8] = {0};
+    sprintf(find_node_tid_str, "%u", find_node_tid);
+    size_t find_node_tid_len = strlen(find_node_tid_str);
+
+    char tid_len_len[8] = {0};
+    sprintf(tid_len_len, "%hu", (find_node_tid_len + 1) );
+    size_t s_len = strlen(tid_len_len);
+
+    memcpy(send_str, tid_len_len, s_len);
+    send_str += s_len;
+
+    memcpy(send_str, ":f", 2);
+    send_str += 2;
+
+    memcpy(send_str, find_node_tid_str, find_node_tid_len);
+    send_str += find_node_tid_len;
+
+    //*send_str ='d';// tid ++;
+    //send_str +=1;
 
     memcpy(send_str, str4, strlen(str4));
+    send_str += strlen(str4);
 
-    int send_len = strlen("d1:ad2:id20:abcdefghij01234567896:target20:mnopqrstuvwxyz123456e1:q9:find_node1:t2:aa1:y1:qe");
+    int send_len = (send_str - snd_str);
 
     //sendto(s,(char *)snd_str, send_len, 0,(sockaddr*)addr, sizeof(struct sockaddr));
     //dht_print("send find node msg(len:%d): %s\n", send_len, snd_str);
@@ -324,24 +342,27 @@ int find_node(sockaddr_in* addr, u_8 * id, u_8 *tgt)
     m->buf_len = send_len;//strlen("d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe");
     memcpy(m->buf, snd_str, m->buf_len);
 
-    pthread_mutex_lock(&q_mgr.snd_q.mutex);
-
-    if (q_mgr.snd_q.msg_cnt >= MAX_MSG_QUEUE_SIZE)
+    int ret = __add_to_msg_queue(m, &q_mgr);
+    if (ret != OK)
     {
         free(m);
         m = NULL;
-        dht_print("[warning] snd_q is full\n");
-        pthread_mutex_unlock(&q_mgr.snd_q.mutex);
-        pthread_cond_signal(&q_mgr.cond);
         return ERR;
     }
 
-    list_add_tail(&q_mgr.snd_q.q.node, &m->node);
-    q_mgr.snd_q.msg_cnt += 1;
-    pthread_mutex_unlock(&q_mgr.snd_q.mutex);
-    pthread_cond_signal(&q_mgr.cond);
-    //pthread_cond_signal(&q_mgr.snd_q.cond);
+    refresh_route_ctx_t * ctx  = (refresh_route_ctx_t*)malloc(sizeof(refresh_route_ctx_t));
+    if (NULL == ctx)
+    {
+        free(m);
+        m = NULL;
+        dht_print("[FATAL] can not alloc mem\n");
+        return ERR;
+    }
+    ctx->op_type = Y_TYPE_FIND_NODE;
+    ctx->timeout_sec = MSG_TIMEOUT_INTERVAL;
+    ctx->route_info = peer_addr;
 
+    __put_msg_ctx_map(msg_ctx_map,find_node_tid, ctx);
 
     return OK;
 }
@@ -977,7 +998,7 @@ void handle_ping_rsp(ben_dict_t *dict, node_t *node)
        // printf("key:(%s)\n", e->str);
         e = e->p.list_next_ref;
     }
-    if (!tid)
+    if (!find_tid)
     {
         printf("not find tid value!\n");
         return;
@@ -995,6 +1016,9 @@ void handle_ping_rsp(ben_dict_t *dict, node_t *node)
 
 int handle_find_node_rsp(ben_dict_t *dict, node_t *node)
 {
+    char tid_str[8] = {0};
+    u_32 tid = 0;
+    bool find_tid = false;
     u_8 id[NODE_STR_LEN] = {0};
     u_8 nodes_str[500] = {0};
     int nodes_str_len = 0;
@@ -1035,6 +1059,13 @@ int handle_find_node_rsp(ben_dict_t *dict, node_t *node)
             }
 
         }
+        else if ('t' == e->str[0])
+        {
+            memcpy(tid_str, ((char*)e->p.dict_val_ref->str + 1), (e->p.dict_val_ref->str_len -1 ) );
+            tid = (u_32)atol(tid_str);
+            //dht_print("a ping rsp tid: (%s), num (%u)\n", tid_str, tid);
+            find_tid = true;
+        }
         e = e->p.list_next_ref;
     }
     if (false == find_node_str)
@@ -1042,6 +1073,23 @@ int handle_find_node_rsp(ben_dict_t *dict, node_t *node)
        dht_print("not find key r !\n");
         return -1;
     }
+
+    if (!find_tid)
+    {
+        printf("not find tid value --- find node rsp !\n");
+        return -1;
+    }
+
+    map_entry *r = map_del(msg_ctx_map, (void*)&tid );
+    if (NULL !=r)
+    {
+        refresh_route_ctx_t *ctx = (refresh_route_ctx_t*)r->val;
+        //ctx->route_info->refresh_count_down -= 1;
+        ctx->route_info->status = IN_USE;
+        ctx->route_info->refresh_times = PEER_DETECT_UNOK_PERIOD;
+    }
+
+
     int node_ip_port_len = (NODE_STR_LEN + NODE_STR_IP_LEN + NODE_STR_PORT_LEN);
     int node_num = nodes_str_len / node_ip_port_len;
     //dht_print("nodes_len (%d), num (%d)\n", nodes_str_len, node_num);
@@ -1957,7 +2005,7 @@ void refresh_route(node_t *node, int type)
         }
         else if(type == Y_TYPE_FIND_NODE)
         {
-            ret = find_node(&remote_addr,node->node_id, node->node_id);
+            ret = find_node(&remote_addr,node->node_id, node->node_id, buffer[i].peer_addr_in_mem);
         }
     }
 
@@ -1982,7 +2030,7 @@ void find_neighbor(node_t*node)
         remote_addr.sin_port = htons(6881);
         remote_addr.sin_addr.S_un.S_addr = (inet_addr("87.98.162.88"));
         //remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
-        find_node(&remote_addr,node->node_id, node->node_id);
+        //find_node(&remote_addr,node->node_id, node->node_id);
     }
     //refresh_route(node, Y_TYPE_FIND_NODE);
     refresh_route(node, Y_TYPE_PING);
@@ -2297,7 +2345,19 @@ void init_timer_map(hash_tbl *m)
 void period_ping(void*data)
 {
     node_t *node = (node_t*)data;
+    if (node->route_num == 0)
+    {
+        sockaddr_in remote_addr;
+        remote_addr.sin_family = AF_INET;
+        remote_addr.sin_port = htons(6881);
+        remote_addr.sin_addr.S_un.S_addr = (inet_addr("87.98.162.88"));
+        //remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
+        //find_node(&remote_addr,node->node_id, node->node_id);
+        return;
+    }
+
     refresh_route(node, Y_TYPE_PING);
+    refresh_route(node,Y_TYPE_FIND_NODE);
     map_entry *e  = NULL;
     map_for_each(torrent_hash_map, e)
     {
@@ -2337,6 +2397,7 @@ int main()
     }
     init_route_table(&node);
     g_req_id = 0;
+    g_find_node_id = 0;
     //worker(&node);
     // update route table by ping node in route table
 

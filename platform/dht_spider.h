@@ -53,8 +53,8 @@ typedef struct peer_info
     u_8 node_str[NODE_STR_LEN];
     u_8 node_ip[NODE_STR_IP_LEN];
     u_8 node_port[NODE_STR_PORT_LEN];
-    int refresh_count_down;
-    int refresh_times;
+    int refresh_count_down; //PEER_REFRESH_INTERVAL=6
+    int refresh_times; // PEER_DETECT_UNOK_PERIOD=5
     int status;
 }peer_info_t;
 
@@ -123,7 +123,7 @@ typedef struct msg
     list_head_t node;
 }msg_t;
 
-#define MAX_MSG_QUEUE_SIZE (10000)
+#define MAX_MSG_QUEUE_SIZE (100000)
 typedef struct msq_q
 {
     msg_t q;

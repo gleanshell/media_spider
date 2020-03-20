@@ -7,6 +7,7 @@
 #include "bt_parser.h"
 #include <stdarg.h>
 #include "hash_tbl.h"
+#include <time.h>
 
 u_32 g_req_id;
 u_32 g_find_node_id;
@@ -37,11 +38,15 @@ char print_buff[1000]={0};
 
 void dht_print(const char* fmt, ...)
 {
+    struct tm *p;
+    time_t timep;
+    time(&timep);
+    p = localtime(&timep);
     va_list ap;
     va_start(ap,fmt);
     memset(print_buff, 0, 1000);
     vsprintf(print_buff, fmt, ap);
-    printf("%s",print_buff);
+    printf("[%4d\-%02d-%02d %02d:%02d:%02d] %s",p->tm_year+1900, p->tm_mon+1, p->tm_mday, p->tm_hour,p->tm_min,p->tm_sec,print_buff);
     va_end(ap);
 }
 
@@ -181,7 +186,7 @@ int cmp_node_str(unsigned char * str1, unsigned char *str2)
     return 0;
 }
 
-int ping_node(struct sockaddr_in* addr, unsigned char* self_node_id, peer_info_t *peer_addr)
+int ping_node(node_t *node, struct sockaddr_in* addr, unsigned char* self_node_id, peer_info_t *peer_addr)
 {
     //d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe
     char ping_str_start[100] = "d1:ad2:id20:";
@@ -255,7 +260,9 @@ int ping_node(struct sockaddr_in* addr, unsigned char* self_node_id, peer_info_t
     ctx->timeout_sec = MSG_TIMEOUT_INTERVAL;
     ctx->route_info = peer_addr;
 
-    //__put_msg_ctx_map(msg_ctx_map,ping_tid, ctx);
+    sendto(node->recv_socket, m->buf, m->buf_len,0 , (struct sockaddr*)addr, sizeof(struct sockaddr_in));
+
+    __put_msg_ctx_map(node->msg_ctx_map,ping_tid, ctx);
 
     return OK;
 }
@@ -973,6 +980,7 @@ void handle_ping_rsp(ben_dict_t *dict, node_t *node)
         //ctx->route_info->refresh_count_down -= 1;
         ctx->route_info->status = IN_USE;
         ctx->route_info->refresh_times = PEER_DETECT_UNOK_PERIOD;
+        ctx->route_info->refresh_count_down = PEER_REFRESH_INTERVAL;
     }
 }
 
@@ -1051,8 +1059,8 @@ int handle_find_node_rsp(ben_dict_t *dict, node_t *node)
         {
             ctx->route_info->status = IN_USE;
             ctx->route_info->refresh_times = PEER_DETECT_UNOK_PERIOD;
+            ctx->route_info->refresh_count_down = PEER_REFRESH_INTERVAL;
         }
-
     }
 
 
@@ -1390,7 +1398,8 @@ int insert_into_bkt(node_t *node, bucket_tree_node_t *bkt_tree, u_8 *node_str, u
         {
             if (bkt_tree->peer_nodes[i].status == NOT_USE)
             {
-                dht_print("[ERROR] should'nt happen \n");
+                //dht_print("[ERROR] should'nt happen \n");
+                bkt_tree->peer_nodes[i].status == IN_USE;
                 //bkt_tree->peer_nodes[i].status = IN_USE;
             }
             //dht_print("@@@@@@@@@@@@@@@@@@@@@@ same node: %d\n", node->route_num);
@@ -1445,7 +1454,7 @@ int insert_into_bkt(node_t *node, bucket_tree_node_t *bkt_tree, u_8 *node_str, u
         return 0;
     }
     // bkt should split into two bucket
-    dht_print("ssssssssssssplit~~~~\n");
+    //dht_print("ssssssssssssplit~~~~\n");
     int split_ok = 0;
     bucket_tree_node_t *tmp_root = bkt_tree;
     while(!split_ok)
@@ -1476,12 +1485,12 @@ int insert_into_bkt(node_t *node, bucket_tree_node_t *bkt_tree, u_8 *node_str, u
         if (1 == cmp_node_str(tmp_root->range_start_str, t))
         {
             memcpy(&tmp_root->l->peer_nodes[ll++], &bkt_tree->peer_nodes[j], sizeof(peer_info_t));
-            dht_print("[debug] re-insert one to NOT_USE slot LEFT %d,%d \n", tmp_root->l->l == NULL, tmp_root->l->r == NULL);
+            //dht_print("[debug] re-insert one to NOT_USE slot LEFT %d,%d \n", tmp_root->l->l == NULL, tmp_root->l->r == NULL);
         }
         else
         {
             memcpy(&tmp_root->r->peer_nodes[rr++], &bkt_tree->peer_nodes[j], sizeof(peer_info_t));
-            dht_print("[debug] re-insert one to NOT_USE slot RIGHT %d,%d !\n", tmp_root->r->l == NULL, tmp_root->r->r == NULL);
+            //dht_print("[debug] re-insert one to NOT_USE slot RIGHT %d,%d !\n", tmp_root->r->l == NULL, tmp_root->r->r == NULL);
         }
     }
     //insert cur new node_str
@@ -1496,7 +1505,7 @@ int insert_into_bkt(node_t *node, bucket_tree_node_t *bkt_tree, u_8 *node_str, u
         /*time_t t ;
         time(&t);
         tmp_root->r->peer_nodes[ll].update_time = t;*/
-        dht_print("[debug] re-insert one to NOT_USE slot LEFT NEW %d,%d !\n", tmp_root->l->l == NULL, tmp_root->l->r == NULL);
+        //dht_print("[debug] re-insert one to NOT_USE slot LEFT NEW %d,%d !\n", tmp_root->l->l == NULL, tmp_root->l->r == NULL);
     }
     else
     {
@@ -1509,7 +1518,7 @@ int insert_into_bkt(node_t *node, bucket_tree_node_t *bkt_tree, u_8 *node_str, u
         /*time_t t ;
         time(&t);
         tmp_root->r->peer_nodes[rr].update_time = t;*/
-        dht_print("[debug] re-insert one to NOT_USE slot RIGHT NEW %d,%d !\n", tmp_root->r->l == NULL, tmp_root->r->r == NULL);
+        //dht_print("[debug] re-insert one to NOT_USE slot RIGHT NEW %d,%d !\n", tmp_root->r->l == NULL, tmp_root->r->r == NULL);
     }
     node->route_num += 1;
     //dht_print("init okkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\n");
@@ -1589,7 +1598,7 @@ int insert_into_bucket_tree(node_t *node, bucket_tree_node_t **bkt_tree,u_8 *nod
 
 int save_route_tbl_to_file(node_t* node)
 {
-    dht_print("fush route to file ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+    //dht_print("fush route to file ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
     FILE *fp = NULL;
     fp = fopen("dht_route_s.dat", "wb+");
     if (NULL == fp)
@@ -1604,6 +1613,8 @@ int save_route_tbl_to_file(node_t* node)
 
     bucket_tree_node_t *root = node->bkt_tree;
     //dht_print("root is null ? %d\n", root ==NULL);
+    if (NULL == root)
+        return -1;
 
     fwrite(node->node_id, 1, NODE_STR_LEN, fp);
     fwrite(&node->route_num, 1, sizeof(int),fp);
@@ -1676,6 +1687,8 @@ int read_route_tbl_frm_config(node_t *node)
         fclose(fp);
         return -1;
     }
+    dht_print("use my node id in config:");
+    print_hex(node->node_id, 20);
 
     //read route num
     int route_num = 0;
@@ -1706,10 +1719,13 @@ int read_route_tbl_frm_config(node_t *node)
     read_len = fread(tmp_node_str, str_len * sizeof(unsigned char), route_num, fp);
     if (read_len != route_num)
     {
-        dht_print("read err\n,real node cnt : %d\n", read_len);
-        free(tmp_node_str);
-        fclose(fp);
-        return -1;
+        dht_print("[warning] read err,real node cnt : %d\n", read_len);
+        //free(tmp_node_str);
+        //fclose(fp);
+        //return -1;
+
+        dht_print("change route num frm (%u) to (%u)", route_num, read_len);
+        route_num = read_len;
     }
 
     //update to route tbl in mem;
@@ -1765,7 +1781,7 @@ int init_route_table(node_t*node)
     //remote_addr.sin_addr.S_un.S_addr = (inet_addr("223.87.179.156"));
     //remote_addr.sin_addr.S_un.S_addr = (inet_addr("87.98.162.88"));
     ret = find_node(node,&remote_addr,node->node_id, node->node_id,NULL);
-    ret = ping_node(&remote_addr,node->node_id, NULL);
+    ret = ping_node(node, &remote_addr,node->node_id, NULL);
      int try_times = 0;
      while (try_times -- > 0)
      {
@@ -1848,7 +1864,7 @@ int tree_node_to_buffer(node_t *node, route_and_peer_addr_in_mem_t *buffer, u_32
             for (int i = 0; i < BUCKET_SIZE; ++i)
             {
 
-                if ( (tmp->peer_nodes[i].status == IN_USE && tmp->peer_nodes[i].refresh_count_down == PEER_REFRESH_INTERVAL) )
+                if ( (tmp->peer_nodes[i].status == IN_USE && tmp->peer_nodes[i].refresh_count_down >0) )
                 {
                     memcpy(buf->node_str, tmp->peer_nodes[i].node_str, NODE_STR_LEN);
                     memcpy(buf->node_ip, tmp->peer_nodes[i].node_ip, NODE_STR_IP_LEN);
@@ -1899,7 +1915,7 @@ int tree_node_to_buffer(node_t *node, route_and_peer_addr_in_mem_t *buffer, u_32
     }
 
     *real_route_num = r_num;
-    dht_print("[INFO] ......... in use num (%u) .........\n", in_use_num);
+    //dht_print("[INFO] ......... in use num (%u) .........\n", in_use_num);
     return 0;
 }
 
@@ -1933,7 +1949,7 @@ void refresh_route(node_t *node, int type)
 
         if (type == Y_TYPE_PING)
         {
-            ret = ping_node(&remote_addr, node->node_id, buffer[i].peer_addr_in_mem);
+            ret = ping_node(node, &remote_addr, node->node_id, buffer[i].peer_addr_in_mem);
             //dht_print("######### %p #######\n", buffer[i].peer_addr_in_mem);
         }
         else if(type == Y_TYPE_FIND_NODE)
@@ -1997,7 +2013,7 @@ void handle_rcv_msg(msg_t *m, node_t *nod)
         dht_print("get rsp type failed [info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
         return;
     }
-    //if (rsp_type != Y_TYPE_PING_RSP && rsp_type != Y_TYPE_FIND_NODE_RSP)
+    if (  rsp_type != Y_TYPE_PING_RSP &&  rsp_type != Y_TYPE_FIND_NODE_RSP)
     dht_print("handle rcv msg : type -> %s\n", type_desc[rsp_type]);
     switch(rsp_type)
     {
@@ -2227,12 +2243,9 @@ void msg_timeout_handler(void*arg)
     }
     if (timeout_msg_num > 0)
     {
-        dht_print(" del then left : (%d)\n", c);
-        dht_print("delete (%d) time out ctx\n", timeout_msg_num);
+        dht_print("del then left:(%d) delete (%d) time out ctx\n",c, timeout_msg_num);
     }
-
-    dht_print(" ctx timeout timer running ......... \n");
-
+    //dht_print("ctx timeout timer running ......... \n");
 }
 
 void init_msg_timeout_timer(node_t*node)

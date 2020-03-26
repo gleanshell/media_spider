@@ -36,7 +36,7 @@ char print_buff[1000]={0};
 //hash_map timer_map;
 //hash_map *t_map = &timer_map;
 
-void dht_print(const char* fmt, ...)
+void dht_print_helper(const char* fmt, ...)
 {
     struct tm *p;
     time_t timep;
@@ -49,6 +49,8 @@ void dht_print(const char* fmt, ...)
     printf("[%4d\-%02d-%02d %02d:%02d:%02d] %s",p->tm_year+1900, p->tm_mon+1, p->tm_mday, p->tm_hour,p->tm_min,p->tm_sec,print_buff);
     va_end(ap);
 }
+
+
 
 int __add_to_msg_queue(msg_t* m, msg_q_mgr_t *q_mgr)
 {
@@ -67,7 +69,7 @@ void __put_msg_ctx_map(hash_tbl *m, u_32 tid, refresh_route_ctx_t* msg_ctx)
     //dht_print("++++++++++add a tid (%u) ++++\n", tid);
     if (m->used >= MAX_MSG_QUEUE_SIZE)
     {
-        dht_print("ctx full.........\n");
+        //dht_print("ctx full.........\n");
         return;
     }
     map_entry e = {0};
@@ -504,6 +506,7 @@ B±àÂë=d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re
         e = e->p.list_next_ref;
     }
     dht_print("not find y value!\n");
+    print_dict(dict);
     return -1;
 }
 
@@ -798,7 +801,7 @@ void handle_on_get_peer(struct sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *
                 dht_print("erro tid len(%d)\n", peer_tid_len);
                 break;
             }
-            dht_print("\nget a find node req tid: %s, len (%d)\n", e->p.dict_val_ref->str, peer_tid_len);
+            dht_print("get a find node req tid: %s, len (%d)\n", e->p.dict_val_ref->str, peer_tid_len);
             memcpy(peer_tid, e->p.dict_val_ref->str,  peer_tid_len);
             //break;
         }
@@ -830,7 +833,7 @@ void handle_on_get_peer(struct sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *
         dht_print("[ERROR] not find key word! find peer id (%d), find peer tgt (%d), peer tid len (%d)\n", find_peer_id, find_peer_tgt, peer_tid_len);
         return;
     }
-    //print_info_hash(info_hash, info_hash_len);
+    print_info_hash(info_hash, info_hash_len);
     if (info_hash_len != 20)
     {
         return;
@@ -978,6 +981,8 @@ void handle_ping_rsp(ben_dict_t *dict, node_t *node)
     {
         refresh_route_ctx_t *ctx = (refresh_route_ctx_t*)r->val;
         //ctx->route_info->refresh_count_down -= 1;
+        if (NULL ==ctx->route_info)
+            return;
         ctx->route_info->status = IN_USE;
         ctx->route_info->refresh_times = PEER_DETECT_UNOK_PERIOD;
         ctx->route_info->refresh_count_down = PEER_REFRESH_INTERVAL;
@@ -1116,18 +1121,17 @@ int rcv_msg(node_t*node)
     inet_bin_to_string(frm_ip, out);
     if (ret > 0)
     {
-        //dht_print("rcv msg frm-----(%s)---------,len(%d).\n",out, ret);
+        //dht_print("rcv msg frm-----(%s:%u)---------,len(%d).\n",out,in_add.sin_port, ret);
         msg_t *m = (msg_t*)malloc(sizeof(msg_t));
         m->msg_type = RECV_MSG;
         m->addr = in_add;
         m->buf_len = ret;
         memcpy(m->buf, buffer, ret);
-
         handle_rcv_msg(m,node);
-
         return OK;
-
-    } else{
+    }
+    else
+    {
         return ERR;
     }
 }
@@ -1979,7 +1983,8 @@ void find_neighbor(node_t*node)
         remote_addr.sin_port = htons(6881);
         remote_addr.sin_addr.S_un.S_addr = (inet_addr("87.98.162.88"));
         //remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
-        //find_node(&remote_addr,node->node_id, node->node_id);
+        find_node(node, &remote_addr,node->node_id, node->node_id, NULL);
+        return;
     }
     refresh_route(node, Y_TYPE_FIND_NODE);
     //refresh_route(node, Y_TYPE_PING);
@@ -2011,6 +2016,7 @@ void handle_rcv_msg(msg_t *m, node_t *nod)
     if (-1 == rsp_type)
     {
         dht_print("get rsp type failed [info] buf:{%s} buflen{%d}\n", tmp_buff, tmp_buff_len);
+        dht_print("failed rcv buf (%s)\n", tmp_buff);
         return;
     }
     if (  rsp_type != Y_TYPE_PING_RSP &&  rsp_type != Y_TYPE_FIND_NODE_RSP)
@@ -2281,7 +2287,7 @@ void period_ping(void*data)
         remote_addr.sin_port = htons(6881);
         remote_addr.sin_addr.S_un.S_addr = (inet_addr("87.98.162.88"));
         //remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
-        find_node(node,&remote_addr,node->node_id, node->node_id, NULL);
+        //find_node(node,&remote_addr,node->node_id, node->node_id, NULL);
         return;
     }
 

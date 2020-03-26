@@ -69,3 +69,4 @@ typedef struct
 
 int ben_coding(char*b, u_32 len,u_32 *pos);
 void print_result(stack_t *s, contex_stack_t *c);
+void print_dict(ben_dict_t *dict);

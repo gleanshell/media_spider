@@ -44,7 +44,7 @@ int main()
     //query msg timeout timer
     create_timer_evt(2, e, msg_timeout_handler, 30000, &node);
     //save file timer
-    create_timer_evt(3, e,save_route_tbl_to_file ,10000,&node);
+    create_timer_evt(3, e,save_route_tbl_to_file ,30000,&node);
 
     BOOL sucess = SetConsoleCtrlHandler((PHANDLER_ROUTINE)hook_close, TRUE);
     dht_print("hook close result (%d)\n", sucess);

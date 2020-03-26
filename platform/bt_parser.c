@@ -694,6 +694,14 @@ int main22()
     return 0;
 }
 
+void print_dict(ben_dict_t *dict)
+{
+    for(int i = 0; i <dict->ele_cnt;++i)
+    {
+        printf("type (%s)-> %s\n",str_desc[dict->e[i].str_type],dict->e[i].str);
+    }
+}
+
 int main1()
 {
     //char *buffer = "d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re";

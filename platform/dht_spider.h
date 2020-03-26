@@ -158,4 +158,10 @@ void period_ping(void*data);
 void msg_timeout_handler(void*arg);
 void find_neighbor(node_t*node);
 int save_route_tbl_to_file(node_t* node);
+
+#define dht_print(fmt,...)\
+{\
+dht_print_helper("[%s:%d]" fmt,__func__,__LINE__, ##__VA_ARGS__);\
+}
+
 #endif //SHA1_DHT_SPIDER_H

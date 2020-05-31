@@ -123,7 +123,7 @@ typedef struct msg
     list_head_t node;
 }msg_t;
 
-#define MAX_MSG_QUEUE_SIZE (100000)
+#define MAX_MSG_QUEUE_SIZE (200000)
 typedef struct msq_q
 {
     msg_t q;

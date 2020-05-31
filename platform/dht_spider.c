@@ -2213,7 +2213,7 @@ void init_msg_ctx_map(hash_tbl *m)
     map_init(m, int_hash, int_equal_f, 1 << 16, (1<<16) - 1);
 }
 
-#define MAX_TIMEOUT_TID (10000)
+#define MAX_TIMEOUT_TID (100000)
 void msg_timeout_handler(void*arg)
 {
     node_t*node = (node_t*)arg;
@@ -2236,6 +2236,8 @@ void msg_timeout_handler(void*arg)
     for (int i = 0; i < timeout_msg_num; ++i)
     {
         map_entry *del = map_del(node->msg_ctx_map, (void*)&tid_arr[i]);
+        free(del);
+        del=NULL;
     }
 
     e = NULL;

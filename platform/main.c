@@ -42,7 +42,7 @@ int main()
     //find node timer
     create_timer_evt(1, e, find_neighbor, 10000, &node);
     //query msg timeout timer
-    create_timer_evt(2, e, msg_timeout_handler, 30000, &node);
+    create_timer_evt(2, e, msg_timeout_handler, 10000, &node);
     //save file timer
     create_timer_evt(3, e,save_route_tbl_to_file ,30000,&node);
 

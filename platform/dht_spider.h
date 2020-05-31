@@ -5,11 +5,17 @@
 #ifndef SHA1_DHT_SPIDER_H
 #define SHA1_DHT_SPIDER_H
 
-#include <winsock.h>
+//#include <winsock.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+
 #include <time.h>
 #include "list.h"
 #include "hash_tbl.h"
 
+typedef int SOCKET;
 typedef unsigned long long u_64;
 typedef unsigned long u_32;
 typedef unsigned short int u_16;

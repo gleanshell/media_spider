@@ -2,7 +2,8 @@
 #define __EVT_H_
 
 
-#include<winsock.h>
+#include<sys/select.h>
+//#include<winsock.h>
 #include "list.h"
 
 typedef struct timer_evt

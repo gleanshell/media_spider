@@ -3,7 +3,7 @@
 //
 
 #include <stdio.h>
-#include <winsock.h>
+//#include <winsock.h>
 #include "sha1.h"
 
 void print_hex(unsigned char* n, u_32 len)

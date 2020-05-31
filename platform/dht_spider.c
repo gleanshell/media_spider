@@ -1,13 +1,17 @@
 //
 // Created by xx on 2018/8/26.
 //
+#include <unistd.h>
+#include <fcntl.h>
 
 #include <stdio.h>
 #include "dht_spider.h"
 #include "bt_parser.h"
 #include <stdarg.h>
 #include "hash_tbl.h"
-#include <time.h>
+#include "sha1.h"
+//#include <time.h>
+
 
 u_32 g_req_id;
 u_32 g_find_node_id;
@@ -619,7 +623,8 @@ void handle_on_ping(struct sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *node
         return;
     }
 
-    u_32 frm_ip = (rcv_addr->sin_addr.S_un.S_addr);
+    u_32 frm_ip =  (rcv_addr->sin_addr.s_addr);
+    //u_32 frm_ip = (rcv_addr->sin_addr.S_un.S_addr);
     char out[20] ={0};
     inet_bin_to_string(frm_ip, out);
 
@@ -758,7 +763,7 @@ void handle_on_find_node(struct sockaddr_in *rcv_addr, ben_dict_t *dict, node_t 
         return;
     }
 
-    u_32 frm_ip = (rcv_addr->sin_addr.S_un.S_addr);
+    u_32 frm_ip = (rcv_addr->sin_addr.s_addr);
     char out[20] ={0};
     inet_bin_to_string(frm_ip, out);
 
@@ -924,7 +929,7 @@ void handle_on_get_peer(struct sockaddr_in *rcv_addr, ben_dict_t *dict, node_t *
     }
 
 
-    u_32 frm_ip = (rcv_addr->sin_addr.S_un.S_addr);
+    u_32 frm_ip = (rcv_addr->sin_addr.s_addr);
     char out[20] ={0};
     inet_bin_to_string(frm_ip, out);
 
@@ -1116,7 +1121,7 @@ int rcv_msg(node_t*node)
     int buffer_len = 500;
     char buffer[500] = {0};
     int ret = recvfrom(s,buffer,buffer_len,0,(struct sockaddr*)&in_add,&in_add_len);
-    u_32 frm_ip = (in_add.sin_addr.S_un.S_addr);
+    u_32 frm_ip = (in_add.sin_addr.s_addr);
     char out[20] ={0};
     inet_bin_to_string(frm_ip, out);
     if (ret > 0)
@@ -1167,7 +1172,7 @@ int init_self_node_id(node_t*node)
     return random_node_id(node->node_id);
 }
 
-int init_wsa()
+/*int init_wsa()
 {
     WORD sock_ver = MAKEWORD(2,2);
     WSADATA wsadata ;
@@ -1178,34 +1183,36 @@ int init_wsa()
     }
     return 0;
 }
-
+*/
 int init_rcv_socket(node_t *node)
 {
-    node->recv_socket = INVALID_SOCKET;
+    node->recv_socket = -1;
     node->recv_socket = socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP);
-    if (INVALID_SOCKET == node->recv_socket)
+    if (-1 == node->recv_socket)
     {
         dht_print("new socket err\n");
         return -1;
     }
-    u_long mode = 1;//set none-block socket
-    int r_ctl = ioctlsocket(node->recv_socket,FIONBIO,&mode);
+    unsigned long mode = 1;//set none-block socket
+    //int r_ctl = ioctlsocket(node->recv_socket,FIONBIO,&mode);
+    int flags = fcntl(node->recv_socket, F_GETFL, 0); 
+    int r_ctl = fcntl(node->recv_socket, F_SETFL, flags | O_NONBLOCK);
     if (r_ctl != 0)
     {
         dht_print("ioctl err:%d\n", r_ctl);
-        closesocket(node->recv_socket);
+        close(node->recv_socket);
         return -1;
     }
     struct sockaddr_in local_addr;
     local_addr.sin_family = AF_INET;
     local_addr.sin_port = htons(6881);
-    local_addr.sin_addr.S_un.S_addr = INADDR_ANY;// inet_addr("127.0.0.1") ;//INADDR_ANY;
+    local_addr.sin_addr.s_addr = INADDR_ANY;// inet_addr("127.0.0.1") ;//INADDR_ANY;
 
     int ret = bind(node->recv_socket,(struct sockaddr*)&local_addr, sizeof(struct sockaddr));
     if (0 != ret)
     {
         dht_print("bind err:%d\n", ret);
-        closesocket(node->recv_socket);
+        close(node->recv_socket);
         return -1;
     }
 
@@ -1214,15 +1221,15 @@ int init_rcv_socket(node_t *node)
 
 void clear_node(node_t *node)
 {
-    WSACleanup();
-    closesocket(node->recv_socket);
+    //WSACleanup();
+    close(node->recv_socket);
 }
 
 int init_self_node(node_t *node)
 {
     int ret = -1;
     memset(node,0, sizeof(node_t));
-    ret = init_wsa();
+    ret = 0;//init_wsa();
     if (-1 == ret)
     {
         return -1;
@@ -1780,7 +1787,7 @@ int init_route_table(node_t*node)
     remote_addr.sin_family = AF_INET;
     remote_addr.sin_port = htons(6881);
     //remote_addr.sin_port = htons(49246);
-    remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
+    remote_addr.sin_addr.s_addr = (inet_addr("67.215.246.10"));
     //remote_addr.sin_addr.S_un.S_addr = (inet_addr("82.221.103.244"));
     //remote_addr.sin_addr.S_un.S_addr = (inet_addr("223.87.179.156"));
     //remote_addr.sin_addr.S_un.S_addr = (inet_addr("87.98.162.88"));
@@ -1821,7 +1828,7 @@ void _send_first_msg(node_t*nod)
 
         q_mgr.snd_q.msg_cnt -= 1;
         char out[21] ={0};
-        inet_bin_to_string(m->addr.sin_addr.S_un.S_addr, out);
+        inet_bin_to_string(m->addr.sin_addr.s_addr, out);
         //dht_print("send one msg {%s} len {%d} to =====(%s)=====, snd q len (%d)\n",m->buf, m->buf_len,out, q_mgr.snd_q.msg_cnt);
 
         free(m);
@@ -1939,14 +1946,14 @@ void refresh_route(node_t *node, int type)
     struct sockaddr_in remote_addr;
     remote_addr.sin_family = AF_INET;
     remote_addr.sin_port = htons(6881);
-    remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
+    remote_addr.sin_addr.s_addr = (inet_addr("67.215.246.10"));
 
 
     route_and_peer_addr_in_mem_t *tmp = buffer;
     for (int i = 0; i < real_route_num; ++i)
     {
         u_32* ip =(u_32*)(buffer[i].node_ip);
-        remote_addr.sin_addr.S_un.S_addr = *ip;
+        remote_addr.sin_addr.s_addr = *ip;
 
         u_16 * port = (u_16*)(buffer[i].node_port);
         remote_addr.sin_port = *port;
@@ -1981,7 +1988,7 @@ void find_neighbor(node_t*node)
         struct sockaddr_in remote_addr;
         remote_addr.sin_family = AF_INET;
         remote_addr.sin_port = htons(6881);
-        remote_addr.sin_addr.S_un.S_addr = (inet_addr("87.98.162.88"));
+        remote_addr.sin_addr.s_addr = (inet_addr("87.98.162.88"));
         //remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
         find_node(node, &remote_addr,node->node_id, node->node_id, NULL);
         return;
@@ -2114,7 +2121,7 @@ void *timer_thread(void*arg)
         }
 
         ++ tick;
-        Sleep(1000);
+        sleep(1000);
     }
 }
 
@@ -2197,7 +2204,7 @@ void* net_thread(void*arg)
         {
             //dht_print("rcv msg...\n");
             rcv_msg( nod);
-            Sleep(50);
+            sleep(50);
         }
 
     }
@@ -2287,7 +2294,7 @@ void period_ping(void*data)
         struct sockaddr_in remote_addr;
         remote_addr.sin_family = AF_INET;
         remote_addr.sin_port = htons(6881);
-        remote_addr.sin_addr.S_un.S_addr = (inet_addr("87.98.162.88"));
+        remote_addr.sin_addr.s_addr = (inet_addr("87.98.162.88"));
         //remote_addr.sin_addr.S_un.S_addr = (inet_addr("67.215.246.10"));
         //find_node(node,&remote_addr,node->node_id, node->node_id, NULL);
         return;
@@ -2350,7 +2357,7 @@ int mainxyz()
 
     init_torrent_hash_map(torrent_hash_map);
 
-    u_long tip = inet_addr("0.0.0.1");
+    unsigned long tip = inet_addr("0.0.0.1");
     dht_print("inet addr (%u)\n", tip);
     u_8 *z = (u_8*)&tip;
     dht_print("low->high: (%hu.%hu.%hu.%hu)\n", *z, *(z+1),*(z+2), *(z+3));

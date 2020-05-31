@@ -1,11 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <windows.h>
+//#include <windows.h>
 #include "evt.h"
 #include "dht_spider.h"
 
 node_t *g_node;
-BOOL hook_close(DWORD ctr_evt)
+/*BOOL hook_close(DWORD ctr_evt)
 {
     switch (ctr_evt)
     {
@@ -15,7 +15,7 @@ BOOL hook_close(DWORD ctr_evt)
     default:
         return TRUE;
     }
-}
+}*/
 
 int main()
 {
@@ -46,8 +46,8 @@ int main()
     //save file timer
     create_timer_evt(3, e,save_route_tbl_to_file ,30000,&node);
 
-    BOOL sucess = SetConsoleCtrlHandler((PHANDLER_ROUTINE)hook_close, TRUE);
-    dht_print("hook close result (%d)\n", sucess);
+ /*   BOOL sucess = SetConsoleCtrlHandler((PHANDLER_ROUTINE)hook_close, TRUE);
+    dht_print("hook close result (%d)\n", sucess);*/
     evt_loop(e);
 
     return 0;
